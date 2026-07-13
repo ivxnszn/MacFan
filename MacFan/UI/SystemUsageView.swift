@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct SystemUsagePoint: Identifiable, Equatable {
@@ -7,28 +8,28 @@ struct SystemUsagePoint: Identifiable, Equatable {
     let gpu: Double?
     var id: Date { timestamp }
 }
-
 private struct SystemUsagePresentation: Equatable {
     var usage: SystemUsage?
     var history: [SystemUsagePoint]
     var cpuSpark: [Double]
     var memorySpark: [Double]
     var gpuSpark: [Double]
+    var batterySpark: [Double]
 
-    static let empty = Self(usage: nil, history: [], cpuSpark: [], memorySpark: [], gpuSpark: [])
+    static let empty = Self(usage: nil, history: [], cpuSpark: [], memorySpark: [], gpuSpark: [], batterySpark: [])
 }
-
 @MainActor
 final class SystemUsageViewModel: ObservableObject {
     @Published private var presentation = SystemUsagePresentation.empty
     private let sampler = SystemUsageSampler()
     private var runGeneration: UInt = 0
 
-    fileprivate var usage: SystemUsage? { presentation.usage }
-    fileprivate var history: [SystemUsagePoint] { presentation.history }
-    fileprivate var cpuSpark: [Double] { presentation.cpuSpark }
-    fileprivate var memorySpark: [Double] { presentation.memorySpark }
-    fileprivate var gpuSpark: [Double] { presentation.gpuSpark }
+    var usage: SystemUsage? { presentation.usage }
+    var history: [SystemUsagePoint] { presentation.history }
+    var cpuSpark: [Double] { presentation.cpuSpark }
+    var memorySpark: [Double] { presentation.memorySpark }
+    var gpuSpark: [Double] { presentation.gpuSpark }
+    var batterySpark: [Double] { presentation.batterySpark }
 
     func run() async {
         // Every visible System page owns the newest generation. A rapid
@@ -56,22 +57,26 @@ final class SystemUsageViewModel: ObservableObject {
         var cpuSpark = presentation.cpuSpark
         var memorySpark = presentation.memorySpark
         var gpuSpark = presentation.gpuSpark
+        var batterySpark = presentation.batterySpark
         let point = SystemUsagePoint(timestamp: .now, cpu: next.cpuTotalPercent, memory: next.memoryPercent, gpu: next.gpuPercent)
         history.append(point)
         if history.count > 90 { history.removeFirst(history.count - 90) }
         cpuSpark.append(next.cpuTotalPercent)
         memorySpark.append(next.memoryPercent)
         if let gpu = next.gpuPercent { gpuSpark.append(gpu) }
+        if let bp = next.batteryPercent { batterySpark.append(bp) }
         if cpuSpark.count > 90 { cpuSpark.removeFirst(cpuSpark.count - 90) }
         if memorySpark.count > 90 { memorySpark.removeFirst(memorySpark.count - 90) }
         if gpuSpark.count > 90 { gpuSpark.removeFirst(gpuSpark.count - 90) }
+        if batterySpark.count > 90 { batterySpark.removeFirst(batterySpark.count - 90) }
         let displayedUsage = presentation.usage.flatMap { presentationEquivalent($0, next) ? $0 : nil } ?? next
         presentation = SystemUsagePresentation(
             usage: displayedUsage,
             history: history,
             cpuSpark: cpuSpark,
             memorySpark: memorySpark,
-            gpuSpark: gpuSpark
+            gpuSpark: gpuSpark,
+            batterySpark: batterySpark
         )
     }
 
@@ -85,6 +90,13 @@ final class SystemUsageViewModel: ObservableObject {
             && lhs.thermalStateRaw == rhs.thermalStateRaw
             && Int(lhs.batteryPercent ?? -1) == Int(rhs.batteryPercent ?? -1)
             && lhs.batteryCharging == rhs.batteryCharging
+            && bucket(lhs.batteryWatts ?? -1, step: 0.5) == bucket(rhs.batteryWatts ?? -1, step: 0.5)
+            && bucket(lhs.batteryHealthPercent ?? -1, step: 0.5) == bucket(rhs.batteryHealthPercent ?? -1, step: 0.5)
+            && lhs.batteryCycleCount == rhs.batteryCycleCount
+            && bucket(lhs.batteryAdapterWatts ?? -1, step: 1) == bucket(rhs.batteryAdapterWatts ?? -1, step: 1)
+            && bucket(lhs.batteryTempC ?? -99, step: 0.5) == bucket(rhs.batteryTempC ?? -99, step: 0.5)
+            && bucket(lhs.batteryCurrentMA ?? -99999, step: 50) == bucket(rhs.batteryCurrentMA ?? -99999, step: 50)
+            && bucket(lhs.batteryVoltageMV ?? -1, step: 50) == bucket(rhs.batteryVoltageMV ?? -1, step: 50)
             && lhs.diskUsedBytes / 268_435_456 == rhs.diskUsedBytes / 268_435_456
             && bucket(lhs.networkReceivedKBps ?? -1, step: 1) == bucket(rhs.networkReceivedKBps ?? -1, step: 1)
             && bucket(lhs.networkSentKBps ?? -1, step: 1) == bucket(rhs.networkSentKBps ?? -1, step: 1)
@@ -122,6 +134,15 @@ struct SystemUsageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             statusHeader
+            // Hardware specs teaser (clean + scannable). Friendly name + chip details hero; raw model ID hidden (was meaningless e.g. "Mac15,6").
+            // Cached fetch + pure DesignSystem. No pills. Tap for more (future sheet).
+            SpecsTeaserCard()
+                .equatable()
+
+            // CPU all-in-one per-core grid: glance + tap detail.
+            CPUCoresGrid(perCore: viewModel.usage?.perCorePercent ?? [])
+                .equatable()
+
             primaryMetrics
             activityCard
             secondaryMetrics
@@ -242,12 +263,20 @@ struct SystemUsageView: View {
                 detail: "↓ \(Self.rate(usage?.networkReceivedKBps ?? 0)) · ↑ \(Self.rate(usage?.networkSentKBps ?? 0))",
                 color: .macFanBlue
             )
-            SecondarySystemCard(
-                title: "Battery",
-                icon: "battery.75percent",
-                primary: usage?.batteryPercent.map { "\(Int($0.rounded()))%" } ?? "Unavailable",
-                detail: batteryDetail,
-                color: .macFanMint
+            // Rich battery card in System tab: detailed + beautiful. Prominent power in W (calculated |I|×V from IOPS/SMC),
+            // smooth numeric transitions, charging emphasis, raw mA/V, health/cycles/time/adapter/temp. 144Hz lightweight.
+            BatteryRichCard(
+                percent: usage?.batteryPercent,
+                charging: usage?.batteryCharging ?? false,
+                watts: usage?.batteryWatts,
+                health: usage?.batteryHealthPercent,
+                cycles: usage?.batteryCycleCount,
+                adapterWatts: usage?.batteryAdapterWatts,
+                tempC: usage?.batteryTempC,
+                currentMA: usage?.batteryCurrentMA,
+                voltageMV: usage?.batteryVoltageMV,
+                spark: viewModel.batterySpark,
+                detail: batteryDetail
             )
             SecondarySystemCard(
                 title: "Storage",
@@ -294,6 +323,13 @@ struct SystemUsageView: View {
                     technicalMetric("Upload", Self.rate(usage.networkSentKBps ?? 0))
                     technicalMetric("Uptime", Self.uptimeText(usage.uptime))
                     technicalMetric("Thermal state", usage.thermalStateTitle)
+                    if let bp = usage.batteryPercent { technicalMetric("Battery level", "\(Int(bp.rounded()))%") }
+                    if let bw = usage.batteryWatts { technicalMetric("Battery power", String(format: "%.1f W", bw)) }
+                    if let bc = usage.batteryCurrentMA { technicalMetric("Current", "\(Int(bc.rounded())) mA") }
+                    if let bv = usage.batteryVoltageMV { technicalMetric("Voltage", String(format: "%.2f V", bv / 1000)) }
+                    if let bh = usage.batteryHealthPercent { technicalMetric("Battery health", "\(Int(bh.rounded()))%") }
+                    if let bc = usage.batteryCycleCount { technicalMetric("Battery cycles", "\(bc)") }
+                    if let ba = usage.batteryAdapterWatts { technicalMetric("Adapter power", "\(Int(ba)) W") }
                 }
                 .transition(.opacity)
             }
@@ -306,8 +342,9 @@ struct SystemUsageView: View {
     private func technicalMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).macFanChartTick().foregroundStyle(Color.macFanMuted)
-            Text(value).macFanNumber(12).foregroundStyle(Color.macFanPrimary)
+            Text(value).macFanNumber(12).foregroundStyle(Color.macFanPrimary).macFanLiveNumberTransition()
         }
+        .animation(.easeOut(duration: 0.18), value: value)
     }
 
     private func selectMetric(_ metric: SystemChartMetric) {
@@ -334,9 +371,22 @@ struct SystemUsageView: View {
 
     private var batteryDetail: String {
         guard usage?.batteryPercent != nil else { return "No internal battery reported" }
-        if usage?.batteryCharging == true { return "Charging" }
-        if let minutes = usage?.batteryMinutesRemaining { return "About \(minutes / 60)h \(minutes % 60)m remaining" }
-        return "On battery or fully charged"
+        var parts: [String] = []
+        if usage?.batteryCharging == true {
+            if let w = usage?.batteryWatts { parts.append(String(format: "+%.1f W", w)) }
+            parts.append("Charging")
+        } else if let w = usage?.batteryWatts {
+            parts.append(String(format: "%.1f W draw", w))
+        }
+        if let minutes = usage?.batteryMinutesRemaining {
+            parts.append("~\(minutes / 60)h \(minutes % 60)m")
+        }
+        // Show live I/V when interesting (power calc source)
+        if let ma = usage?.batteryCurrentMA, let mv = usage?.batteryVoltageMV, abs(ma) > 10 {
+            parts.append("\(Int(abs(ma)))mA @ \(String(format: "%.1f", mv/1000))V")
+        }
+        if parts.isEmpty { return usage?.batteryCharging == true ? "Charging" : "On battery or fully charged" }
+        return parts.joined(separator: " · ")
     }
 
     private static let byteFormatter: ByteCountFormatter = {
@@ -392,7 +442,7 @@ private struct SystemMetricCard: View {
                     Image(systemName: icon).macFanCallout().foregroundStyle(color)
                 }
                 HStack(alignment: .lastTextBaseline, spacing: 2) {
-                    Text(value).macFanHeroNumeric(size: 32).foregroundStyle(Color.macFanPrimary).contentTransition(.numericText())
+                    Text(value).macFanHeroNumeric(size: 32).foregroundStyle(Color.macFanPrimary).macFanLiveNumberTransition()
                     Text(unit).macFanNumber(15, weight: .medium).foregroundStyle(Color.macFanSecondary)
                 }
                 .padding(.top, 8)
@@ -467,15 +517,177 @@ private struct SecondarySystemCard: View {
                 .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).macFanChartTick().foregroundStyle(Color.macFanMuted)
-                Text(primary).macFanNumber(15, weight: .semibold).foregroundStyle(Color.macFanPrimary)
+                Text(primary).macFanNumber(15, weight: .semibold).foregroundStyle(Color.macFanPrimary).macFanLiveNumberTransition()
                 Text(detail).macFanCallout().foregroundStyle(Color.macFanSecondary).lineLimit(1)
             }
+            .animation(.easeOut(duration: 0.22), value: primary)
             Spacer()
         }
         .padding(13)
         .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.055), lineWidth: 0.5) }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Beautiful rich battery card for System tab (or battery module). Detailed power-focused.
+/// Especially shows charging power in Watts (W) calculated |current| × voltage from IOPS or SMC/AppleSmartBattery.
+/// Smooth numeric transitions (.contentTransition + custom) for 144 Hz friendly smooth numbers. Lightweight (no per-frame).
+/// Includes % bar, prominent W, mA/V details, health, cycles, adapter, temp, remaining.
+private struct BatteryRichCard: View {
+    let percent: Double?
+    let charging: Bool
+    let watts: Double?
+    let health: Double?
+    let cycles: Int?
+    let adapterWatts: Double?
+    let tempC: Double?
+    let currentMA: Double?
+    let voltageMV: Double?
+    let spark: [Double]
+    let detail: String
+
+    private var displayPercent: Int { Int((percent ?? 0).rounded()) }
+    private var isCharging: Bool { charging && (percent ?? 0) < 100 }
+    private var powerString: String? {
+        guard let w = watts, w > 0.05 else { return nil }
+        return isCharging ? String(format: "+%.1f W", w) : String(format: "%.1f W", w)
+    }
+    private var healthString: String? {
+        if let h = health { return "\(Int(h.rounded()))% health" }
+        return nil
+    }
+    private var cyclesString: String? {
+        cycles.map { "\($0) cyc" }
+    }
+    private var adapterString: String? {
+        if let aw = adapterWatts, aw > 0 { return "\(Int(aw))W adapter" }
+        if !isCharging && percent != nil { return "On battery" }
+        return nil
+    }
+    private var voltageString: String? {
+        guard let mv = voltageMV, mv > 100 else { return nil }
+        return String(format: "%.2f V", mv / 1000.0)
+    }
+    private var currentString: String? {
+        guard let ma = currentMA, abs(ma) > 5 else { return nil }
+        let s = isCharging ? "+" : ""
+        return "\(s)\(Int(abs(ma).rounded())) mA"
+    }
+
+    private var fraction: Double { min(max((percent ?? 0) / 100.0, 0), 1) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header: icon + big % + prominent power W (smooth) + spark
+            HStack(spacing: 10) {
+                Image(systemName: "battery.75percent")
+                    .macFanSubhead()
+                    .foregroundStyle(isCharging ? Color.macFanMint : Color.macFanSecondary)
+                    .frame(width: 26, height: 26)
+                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Battery")
+                        .macFanChartTick()
+                        .foregroundStyle(Color.macFanMuted)
+                    HStack(alignment: .lastTextBaseline, spacing: 5) {
+                        Text("\(displayPercent)")
+                            .macFanNumber(20, weight: .semibold)
+                            .foregroundStyle(Color.macFanPrimary)
+                            .macFanLiveNumberTransition()
+                        Text("%")
+                            .macFanNumber(11, weight: .medium)
+                            .foregroundStyle(Color.macFanSecondary)
+                        if let pwr = powerString {
+                            Text(pwr)
+                                .macFanNumber(14, weight: .semibold)
+                                .foregroundStyle(isCharging ? Color.macFanMint : Color.macFanSecondary)
+                                .padding(.leading, 2)
+                                .macFanLiveNumberTransition()
+                                .help(isCharging ? "Charging power (I×V from IOPS + SMC)" : "Discharge power")
+                        }
+                    }
+                }
+
+                Spacer(minLength: 2)
+
+                if spark.count > 1 {
+                    Sparkline(values: spark, color: .macFanMint)
+                        .frame(width: 58, height: 22)
+                        .opacity(0.85)
+                }
+            }
+
+            // Beautiful thin % fill bar
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.06))
+                    if fraction > 0 {
+                        Capsule()
+                            .fill( (isCharging ? Color.macFanMint : Color.macFanCyan).opacity(0.92) )
+                            .frame(width: proxy.size.width * fraction)
+                    }
+                }
+            }
+            .frame(height: 3)
+            .padding(.top, -2)
+
+            // Rich metadata: I/V power details + health/cycles/adapter/temp in clean capsules
+            HStack(spacing: 6) {
+                if let c = currentString {
+                    Text(c)
+                        .macFanCaption()
+                        .foregroundStyle(Color.macFanSecondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.white.opacity(0.035), in: Capsule())
+                }
+                if let v = voltageString {
+                    Text(v)
+                        .macFanCaption()
+                        .foregroundStyle(Color.macFanSecondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.white.opacity(0.035), in: Capsule())
+                }
+                if let h = healthString {
+                    Text(h)
+                        .macFanCaption()
+                        .foregroundStyle(Color.macFanPrimary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.macFanMint.opacity(0.10), in: Capsule())
+                }
+                if let c = cyclesString {
+                    Text(c)
+                        .macFanCaption()
+                        .foregroundStyle(Color.macFanMuted)
+                }
+                if let a = adapterString {
+                    Text(a)
+                        .macFanCaption()
+                        .foregroundStyle(isCharging ? Color.macFanMint : Color.macFanSecondary)
+                }
+                if let t = tempC, t > -40 {
+                    Text("\(Int(t.rounded()))°C")
+                        .macFanCaption()
+                        .foregroundStyle(Color.macFanAmberLight)
+                }
+                Spacer()
+            }
+            .padding(.top, 1)
+
+            Text(detail)
+                .macFanCallout()
+                .foregroundStyle(Color.macFanSecondary)
+                .lineLimit(1)
+        }
+        .padding(13)
+        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.055), lineWidth: 0.5) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Battery \(displayPercent)% \(powerString ?? "") \(detail)")
     }
 }
 
@@ -726,4 +938,143 @@ private func nearestSystemPoint(
         .min { abs(points[$0].timestamp.timeIntervalSince(date)) < abs(points[$1].timestamp.timeIntervalSince(date)) }
         .map { points[$0] }
     return nearest.flatMap { abs($0.timestamp.timeIntervalSince(date)) <= tolerance ? $0 : nil }
+}
+struct SpecsTeaserCard: View, Equatable {
+    private let specs = fetchMacSpecs()
+
+    static func == (lhs: SpecsTeaserCard, rhs: SpecsTeaserCard) -> Bool { true } // static cached content; identity is global
+
+    var body: some View {
+        Button {
+            // TODO: Open beautiful full Hardware Report sheet/page with more details, charts, export.
+            // Keep simple for now — this is the scannable teaser.
+            print("Hardware specs tapped — open full beautiful report")
+        } label: {
+            VStack(alignment: .leading, spacing: MacFanMetrics.spacingS) {
+                // Header — small and calm. Raw "Mac15,6"-style IDs are meaningless to users;
+                // friendly name + chip details are the hero. Raw kept only in full report.
+                HStack(spacing: 8) {
+                    Image(systemName: "applelogo")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.macFanPrimary)
+                    Text("This Mac")
+                        .macFanSubhead()
+                        .foregroundStyle(Color.macFanSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .macFanCaption()
+                        .foregroundStyle(Color.macFanMuted)
+                }
+
+                // Prominent friendly name (beautiful + useful, e.g. "MacBook Pro 14\" M3 Pro 2023").
+                // Replaces meaningless model ID and avoids any GPU mislabel.
+                Text(specs.name)
+                    .macFanTitle2()
+                    .foregroundStyle(Color.macFanPrimary)
+                    .lineLimit(1)
+
+                // Clean, scannable facts row. Professional, icon-led, no clunky pills.
+                // Uses DesignSystem tokens + P/E breakdown + GPU cores + improved cache (from perflevels).
+                // Max freq omitted when unavailable/unreliable (common on Apple silicon).
+                HStack(spacing: 14) {
+                    // CPU: prefer human P+E split (e.g. "5P + 6E") over raw P/L
+                    HStack(spacing: 4) {
+                        Image(systemName: "cpu")
+                            .macFanCaption()
+                            .foregroundStyle(Color.macFanBlue)
+                        let cLabel: String = (specs.cpuPCores > 0 && specs.cpuECores > 0)
+                            ? "\(specs.cpuPCores)P + \(specs.cpuECores)E"
+                            : "\(specs.physicalCores)P/\(specs.logicalCores)L"
+                        Text(cLabel)
+                            .macFanNumber(11, weight: .semibold)
+                            .foregroundStyle(Color.macFanPrimary)
+                            .contentTransition(.numericText())
+                    }
+                    HStack(spacing: 4) {
+                        Image(systemName: "memorychip")
+                            .macFanCaption()
+                            .foregroundStyle(Color.macFanCyan)
+                        Text("\(specs.memoryGB) GB")
+                            .macFanNumber(11, weight: .semibold)
+                            .foregroundStyle(Color.macFanPrimary)
+                    }
+                    if let gc = specs.gpuCores, gc > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "rectangle.3.group")
+                                .macFanCaption()
+                                .foregroundStyle(Color.macFanVioletLight)
+                            Text("\(gc)-core GPU")
+                                .macFanNumber(11, weight: .semibold)
+                                .foregroundStyle(Color.macFanPrimary)
+                        }
+                    }
+                    if let mhz = specs.maxCPUMHz, mhz > 500 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gauge")
+                                .macFanCaption()
+                                .foregroundStyle(Color.macFanVioletLight)
+                            let ghz = Double(mhz) / 1000.0
+                            let f = ghz >= 4 ? String(format: "%.0f", ghz) : String(format: "%.1f", ghz)
+                            Text("\(f) GHz")
+                                .macFanNumber(11, weight: .semibold)
+                                .foregroundStyle(Color.macFanPrimary)
+                        }
+                    }
+                    if let cacheMB = specs.l2CacheMB ?? specs.l3CacheMB, cacheMB > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.stack.3d.up")
+                                .macFanCaption()
+                                .foregroundStyle(Color.macFanVioletLight)
+                            Text("L2 \(cacheMB) MB")
+                                .macFanNumber(11, weight: .semibold)
+                                .foregroundStyle(Color.macFanPrimary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .macFanCard(padding: MacFanMetrics.cardPadding, radius: MacFanMetrics.radiusL)
+        }
+        .buttonStyle(MacFanPressableStyle())
+        .macFanHoverSpecial()
+        .accessibilityLabel("Hardware specifications for this Mac")
+    }
+}
+
+struct CPUCoresGrid: View, Equatable {
+    let perCore: [Double]
+
+    static func == (lhs: CPUCoresGrid, rhs: CPUCoresGrid) -> Bool {
+        // Bucket to 1% to avoid micro jitter causing redraws at high refresh.
+        func b(_ v: Double) -> Int { Int(v.rounded()) }
+        return lhs.perCore.count == rhs.perCore.count &&
+            zip(lhs.perCore, rhs.perCore).allSatisfy { b($0) == b($1) }
+    }
+
+    var body: some View {
+        if !perCore.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("CPU CORES (tap for detail)")
+                    .macFanSectionLabel()
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 58))], spacing: 6) {
+                    ForEach(Array(perCore.enumerated()), id: \.offset) { idx, pct in
+                        VStack(spacing: 2) {
+                            Text("C\(idx)").macFanCaption().foregroundStyle(Color.macFanMuted)
+                            ZStack(alignment: .bottom) {
+                                Color.macFanStroke.opacity(0.3)
+                                Color.macFanBlue.frame(height: 24 * (pct / 100))
+                            }
+                            .frame(height: 24)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            Text("\(Int(pct))%")
+                                .macFanCaption()
+                                .foregroundStyle(pct > 80 ? Color.macFanCoral : Color.macFanPrimary)
+                        }
+                        .onTapGesture { /* core drill */ }
+                        .macFanHoverSpecial()
+                    }
+                }
+            }
+        } else { EmptyView() }
+    }
 }

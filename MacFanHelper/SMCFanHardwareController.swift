@@ -462,16 +462,19 @@ final class SMCFanHardwareController {
         if forceTestAvailable { try? connection.writeUInt8("Ftst", 0) }
 
         let deadline = Date().addingTimeInterval(5)
+        var lastConfirmed = false
         repeat {
             let noManualFan = limits.allSatisfy { limit in
                 guard let mode = try? connection.readUInt8(modeKey(limit.id)) else { return false }
                 return mode != 1
             }
             let forceTestReleased = !forceTestAvailable || (try? connection.readUInt8("Ftst")) == 0
-            if noManualFan && forceTestReleased { return true }
+            lastConfirmed = noManualFan && forceTestReleased
+            if lastConfirmed { return true }
+            guard Date() < deadline else { break }
             wait(0.1)
-        } while Date() < deadline
-        return false
+        } while true
+        return lastConfirmed
     }
 
     private func enableManualMode(timeout: TimeInterval = 10) throws {
@@ -541,6 +544,28 @@ final class SMCFanHardwareController {
             guard abs(readback - target) <= max(60, target * 0.015) else {
                 throw HelperSMCError.responseNotConfirmed
             }
+        }
+    }
+
+    /// Lightweight periodic reassertion for sustained overrides (e.g. Max mode).
+    /// Re-writes Ftst/mode/target without confirmation loops or waits so the
+    /// helper can fight macOS reclamation between heartbeats. Watchdog still
+    /// validates; this just improves the chance the desired state sticks.
+    /// For Max/full-blast we double-tap the writes as macOS thermal can race the
+    /// first set when fans were at 0.
+    func reassert(targets: [Int: Double]) {
+        guard !targets.isEmpty else { return }
+        if forceTestAvailable {
+            try? connection.writeUInt8("Ftst", 1)
+            try? connection.writeUInt8("Ftst", 1)
+        }
+        for limit in limits {
+            guard let rpm = targets[limit.id] else { continue }
+            try? connection.writeUInt8(modeKey(limit.id), 1)
+            try? connection.writeRPM(targetKey(limit.id), rpm)
+            // Double write to increase chance of sticking against reclaim on M-series.
+            try? connection.writeUInt8(modeKey(limit.id), 1)
+            try? connection.writeRPM(targetKey(limit.id), rpm)
         }
     }
 

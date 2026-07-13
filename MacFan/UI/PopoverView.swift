@@ -201,7 +201,7 @@ struct PopoverView: View {
                 .monospacedDigit()
                 .foregroundStyle(Color.macFanSecondary)
                 .frame(width: 18, alignment: .trailing)
-                .contentTransition(.numericText())
+                .macFanLiveNumberTransition()
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: value)
     }
@@ -228,14 +228,19 @@ struct PopoverView: View {
                 Label("Protected", systemImage: "checkmark.shield.fill")
                     .macFanLabel(tracking: 0.3)
                     .foregroundStyle(Color.macFanMint)
+                    .help("Fan control active. Automatic safety restore on quit or loss of heartbeat. Tap settings for details.")
             } else {
                 Button(action: onShowSettings) {
-                    Label(model.capability == .monitoring ? "Checking" : "Monitor only", systemImage: "circle.fill")
-                        .macFanLabel(tracking: 0.3)
-                        .foregroundStyle(model.capability == .monitoring ? Color.macFanSecondary : Color.macFanAmberLight)
+                    HStack(spacing: 4) {
+                        Image(systemName: model.capability.statusIcon)
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(model.capability.monitorLabel)
+                    }
+                    .macFanLabel(tracking: 0.3)
+                    .foregroundStyle(model.capability == .monitoring ? Color.macFanSecondary : Color.macFanAmberLight)
                 }
                 .buttonStyle(MacFanPressableStyle(thermalBand: band))
-                .help("Open control status")
+                .help("Monitor-only: \(model.capability.whyMessage). \(model.capability.whatItMeans) \(model.capability.howToFix) Open Settings to fix.")
             }
         }
     }
@@ -258,7 +263,7 @@ struct PopoverView: View {
                 Text(temperature.map { "\(Int(settings.temperatureUnit.convert($0).rounded()))" } ?? "—")
                     .macFanDisplayNumber(44)
                     .foregroundStyle(Color.macFanPrimary)
-                    .contentTransition(.numericText())
+                    .macFanLiveNumberTransition()
                 Text(settings.temperatureUnit == .celsius ? "°C" : "°F")
                     .macFanNumber(14, weight: .medium)
                     .foregroundStyle(Color.macFanSecondary)
@@ -289,36 +294,44 @@ struct PopoverView: View {
 
     private var capabilityBanner: some View {
         Button(action: onShowSettings) {
-            HStack(spacing: 10) {
-                Image(systemName: capabilityIcon)
-                    .macFanCaption() // weight via token; SF Symbol tuned size ok with comment if needed
-                    .foregroundStyle(capabilityColor)
-                    .frame(width: 28, height: 28)
-                    .background(capabilityColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: model.capability.statusIcon)
+                        .macFanCaption()
+                        .foregroundStyle(capabilityColor)
+                        .frame(width: 20, height: 20)
+                        .background(capabilityColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                     Text(capabilityTitle)
                         .macFanLabel(tracking: 0.3)
                         .foregroundStyle(Color.macFanPrimary)
-                    Text(capabilitySubtitle)
+                    Spacer()
+                    Text(model.capability.actionLabel)
+                        .macFanLabel(tracking: 0.25)
+                        .foregroundStyle(Color.macFanBlue)
+                    Image(systemName: "chevron.right")
+                        .macFanCaption()
+                        .foregroundStyle(Color.macFanMuted)
+                }
+                Text(model.capability.whyMessage)
+                    .macFanCaption()
+                    .foregroundStyle(Color.macFanSecondary)
+                    .lineLimit(1)
+                if !model.capability.howToFix.isEmpty {
+                    Text("Fix: \(model.capability.howToFix)")
                         .macFanCaption()
                         .foregroundStyle(Color.macFanSecondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
-                Spacer()
-                Text(model.capability == .monitoring ? "" : "Setup")
-                    .macFanLabel(tracking: 0.3)
-                    .foregroundStyle(Color.macFanBlue)
-                Image(systemName: "chevron.right")
-                    .macFanCaption() // weight via token; SF Symbol tuned size ok with comment if needed
-                    .foregroundStyle(Color.macFanMuted)
             }
             .padding(.horizontal, 11)
-            .frame(minHeight: 46)
+            .padding(.vertical, 8)
+            .frame(minHeight: 58)
             .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.06), lineWidth: 0.5) }
         }
         .buttonStyle(MacFanPressableStyle())
-        .accessibilityLabel("\(capabilityTitle). \(capabilitySubtitle)")
+        .help("Monitor only: \(model.capability.whyMessage). \(model.capability.whatItMeans). \(model.capability.howToFix)")
+        .accessibilityLabel("Monitor only. \(model.capability.whyMessage). Fix: \(model.capability.howToFix)")
     }
 
     private var modeSelector: some View {
@@ -344,7 +357,12 @@ struct PopoverView: View {
 
             HStack(spacing: 3) {
                 ForEach([FanMode.system, .smartBoost, .max, .expert]) { mode in
-                    Button { activate(mode) } label: {
+                    Button {
+                        if mode != .system && !model.capability.canControl {
+                            model.forceCapabilityRefresh()
+                        }
+                        activate(mode)
+                    } label: {
                         VStack(spacing: 4) {
                             ZStack {
                                 if isSelected(mode) {
@@ -370,8 +388,8 @@ struct PopoverView: View {
                     .buttonStyle(MacFanPressableStyle(thermalBand: band))
                     .scaleEffect(isSelected(mode) ? 1.02 : 1.0)
                     .animation(MacFanMetrics.springFast, value: isSelected(mode))
-                    .disabled(mode != .system && (!model.capability.canControl || model.pendingMode != nil))
-                    .accessibilityHint(mode == .system || model.capability.canControl ? mode.subtitle : model.capability.detail)
+                    .disabled(mode != .system && model.pendingMode != nil && mode != .max && mode != .smartBoost)
+                    .accessibilityHint(mode == .system || model.capability.canControl || mode == .max || mode == .smartBoost ? mode.subtitle : "Click to attempt. Monitor-only: \(model.capability.whyMessage). \(model.capability.howToFix)")
                     .accessibilityIdentifier("popover-mode-\(mode.rawValue)")
                 }
             }
@@ -425,7 +443,7 @@ struct PopoverView: View {
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(Color.macFanAmberLight)
-                            .contentTransition(.numericText())
+                            .macFanLiveNumberTransition()
                         Image(systemName: "stop.fill")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.macFanSecondary)
@@ -618,33 +636,9 @@ struct PopoverView: View {
     }
 
     private var capabilityTitle: String {
-        switch model.capability {
-        case .monitoring: "Checking fan control"
-        case .helperUnavailable: "Fan control isn’t enabled"
-        case .externalController: "Another controller is active"
-        case .firmwareLimited: "Fans remain system controlled"
-        case .ready: "Control ready"
-        }
-    }
-
-    private var capabilitySubtitle: String {
-        switch model.capability {
-        case .monitoring: "Temperature monitoring is active."
-        case .helperUnavailable: "Monitoring remains fully available."
-        case .externalController: "MacFan won’t compete for the fans."
-        case .firmwareLimited: "Safety preflight left macOS in control."
-        case .ready: "Watchdog protection is active."
-        }
-    }
-
-    private var capabilityIcon: String {
-        switch model.capability {
-        case .monitoring: "ellipsis.circle"
-        case .helperUnavailable: "lock"
-        case .externalController: "exclamationmark.triangle"
-        case .firmwareLimited: "shield"
-        case .ready: "checkmark.shield"
-        }
+        let c = model.capability
+        if c == .monitoring { return "Checking fan control…" }
+        return "\(c.title) — \(c.shortReason)"
     }
 
     private var capabilityColor: Color {
@@ -687,8 +681,8 @@ private struct PopoverFanRow: View {
                     ProgressView().controlSize(.mini)
                     Text("Starting")
                 } else {
-                    Text(isStopped ? "Idle" : "\(Int(fan.actualRPM.rounded())) RPM")
-                        .contentTransition(.numericText())
+                    Text(isStopped ? (model.activeMode == .max ? "Targeting max" : "Idle") : "\(Int(fan.actualRPM.rounded())) RPM")
+                        .macFanLiveNumberTransition()
                 }
             }
             .macFanLabel(tracking: 0.3)
@@ -721,7 +715,7 @@ private struct PopoverFanRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(fan.name) fan")
-        .accessibilityValue(isStopped ? "Idle under macOS control" : "\(Int(fan.actualRPM.rounded())) RPM")
+        .accessibilityValue(isStopped ? (model.activeMode == .max ? "Idle but targeting max (full blast)" : "Idle under macOS control") : "\(Int(fan.actualRPM.rounded())) RPM")
     }
 }
 

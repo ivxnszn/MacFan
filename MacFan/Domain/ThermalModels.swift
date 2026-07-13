@@ -37,9 +37,9 @@ enum ControlCapability: String, Codable, Equatable, Sendable {
     var title: String {
         switch self {
         case .monitoring: "Monitoring"
-        case .helperUnavailable: "Control setup needed"
-        case .externalController: "Another controller active"
-        case .firmwareLimited: "Hardware-controlled"
+        case .helperUnavailable: "Helper unavailable"
+        case .externalController: "External controller"
+        case .firmwareLimited: "Firmware limited"
         case .ready: "Control ready"
         }
     }
@@ -47,20 +47,101 @@ enum ControlCapability: String, Codable, Equatable, Sendable {
     var detail: String {
         switch self {
         case .monitoring:
-            "Reading sensors locally."
+            "Reading sensors locally. Fan control (tweaking speeds) is disabled."
         case .helperUnavailable:
-            "Install or repair MacFan’s private root helper to enable Manual and Max controls."
+            "The MacFan helper (needed for fan control) is not installed or not responding. Install it to tweak fans."
         case .externalController:
-            "Macs Fan Control has a helper installed, so MacFan will not compete for your fans."
+            "Another fan control app’s helper is installed (e.g. Macs Fan Control). MacFan stays in monitoring mode to avoid conflict."
         case .firmwareLimited:
-            "Experimental control has not passed its hardware or thermal safety check."
+            "Hardware preflight or safety verification failed on this Mac/firmware. Control not available."
         case .ready:
-            "Fan control has passed its hardware preflight."
+            "Fan control has passed its hardware preflight. Full tweaking available."
         }
     }
 
     var canControl: Bool { self == .ready }
     var isMonitoringOnly: Bool { !canControl }
+
+    /// Short label used in headers / status: "Monitoring only", "Checking…", or empty for ready.
+    var monitorLabel: String {
+        switch self {
+        case .ready: ""
+        case .monitoring: "Checking…"
+        default: "Monitoring only"
+        }
+    }
+
+    /// Precise reason the user is limited to monitoring (no control modes).
+    var whyMessage: String {
+        switch self {
+        case .monitoring:
+            "Detecting control availability on this Mac."
+        case .helperUnavailable:
+            "No MacFan helper installed (or it is stopped/not responding)."
+        case .externalController:
+            "External fan controller detected (its helper is present)."
+        case .firmwareLimited:
+            "This Mac’s firmware or hardware safety preflight did not pass."
+        case .ready:
+            ""
+        }
+    }
+
+    /// Plain-language meaning of being in this state.
+    var whatItMeans: String {
+        switch self {
+        case .ready:
+            "Full control (Smart Boost, Max, Expert) is available. Automatic safety restore on quit."
+        default:
+            "Temperatures, charts, and history work normally. You cannot tweak fan speeds, Smart Boost, Max, Cool Burst, or manual curves."
+        }
+    }
+
+    /// Concrete steps to leave monitor-only mode.
+    var howToFix: String {
+        switch self {
+        case .helperUnavailable:
+            "Use the Install/Repair helper button below. It runs a local installer in Terminal (one admin password prompt)."
+        case .externalController:
+            "Quit and uninstall the other fan control app + its helper, then Install/Repair MacFan’s helper."
+        case .firmwareLimited:
+            "Try Install/Repair helper to re-run preflight. On some Macs/firmware only monitoring is supported."
+        case .monitoring:
+            "Wait a moment; this state is transient at launch."
+        case .ready:
+            ""
+        }
+    }
+
+    /// Button label for the primary fix action.
+    var actionLabel: String {
+        switch self {
+        case .externalController: "Remove other controller & repair"
+        default: "Install or repair helper"
+        }
+    }
+
+    /// Short reason label for badges and status rows.
+    var shortReason: String {
+        switch self {
+        case .helperUnavailable: "No helper"
+        case .externalController: "External controller"
+        case .firmwareLimited: "Firmware limited"
+        case .monitoring: "Detecting…"
+        case .ready: "Ready"
+        }
+    }
+
+    /// SF Symbol name for the capability state.
+    var statusIcon: String {
+        switch self {
+        case .monitoring: "ellipsis.circle"
+        case .helperUnavailable: "lock.slash"
+        case .externalController: "exclamationmark.triangle"
+        case .firmwareLimited: "shield.slash"
+        case .ready: "checkmark.shield"
+        }
+    }
 }
 
 enum SmartBoostStatus: String, Codable, Equatable, Sendable {

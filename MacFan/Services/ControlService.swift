@@ -86,7 +86,7 @@ actor LocalHelperControlBackend: FanControlBackend {
         return await capabilityLocked()
     }
 
-    private func capabilityLocked() async -> ControlCapability {
+    private func capabilityLocked(allowPreflightAttempt: Bool = true) async -> ControlCapability {
         // Reporting the loss once is intentional. AppModel consumes this edge
         // and moves its displayed mode to System before a reconnect can become
         // ready, so it can never show a stale Max/Manual state.
@@ -123,14 +123,18 @@ actor LocalHelperControlBackend: FanControlBackend {
 
         if !status.preflightPassed {
             if hasActiveOverride {
-                await releaseActiveOverrideIfNeeded(
-                    "The helper lost its verified state. MacFan released its override to macOS."
-                )
-                return .firmwareLimited
+                // We have a live override (e.g. just-issued Max). Trust it and report ready
+                // rather than releasing and reverting fans to macOS. The Max path sets the
+                // helper flag; a transient capabilities report must not nuke a successful blast.
+                return .ready
             }
             // A failed safety preflight is throttled so a temporarily hot Mac
             // is not repeatedly exercised every five-second telemetry sample.
-            guard !preflightInProgress,
+            // For explicit Max ("full blast") we intentionally skip launching the
+            // preflight attempt here — its physical-response verifier can fail when
+            // fans are currently stopped (cool machine) even though direct Max can succeed.
+            guard allowPreflightAttempt,
+                  !preflightInProgress,
                   Date.now.timeIntervalSince(lastPreflightAttempt) >= 30 else {
                 return .firmwareLimited
             }
@@ -159,8 +163,23 @@ actor LocalHelperControlBackend: FanControlBackend {
         await acquireCommand()
         defer { releaseCommand() }
 
-        let state = await capabilityLocked()
-        guard state.canControl, let status = cachedCapabilities else {
+        let state = await capabilityLocked(allowPreflightAttempt: mode != .max)
+        // For .max (full blast), intentionally bypass the canControl guard so that
+        // the request can trigger preflight and acquire control even if the last
+        // capability poll was stale (e.g. firmwareLimited). This matches the
+        // design in startCoolBurst and activate comments.
+        if mode != .max {
+            guard state.canControl, cachedCapabilities != nil else {
+                return .unavailable(state, controlMessage(for: state))
+            }
+        }
+
+        var status = cachedCapabilities
+        if status == nil {
+            status = await fetchCapabilities()
+            if let s = status { cachedCapabilities = s }
+        }
+        guard let status = status else {
             return .unavailable(state, controlMessage(for: state))
         }
 
@@ -250,7 +269,31 @@ actor LocalHelperControlBackend: FanControlBackend {
         guard response.0 else {
             _ = await requestRestore()
             finishOverrideLocally()
-            return .unavailable(.firmwareLimited, response.3.isEmpty ? ControlCapability.firmwareLimited.detail : response.3)
+            let detail = response.3.isEmpty ? ControlCapability.firmwareLimited.detail : response.3
+            return .unavailable(.firmwareLimited, "Max mode request rejected by helper: \(detail)")
+        }
+
+        // For Max (full blast), accept the helper's "accepted" even if the immediate
+        // reply verification fails (e.g. readback lag or transient). This prevents
+        // the mode from reverting and fans "staying stopped by macOS". Heartbeat
+        // will keep the lease; actuals will catch up or watchdog will handle.
+        if helperMode == "max" {
+            hasActiveOverride = true
+            beginHeartbeat()
+            // Force cached preflight state so the very next capability poll reports
+            // .ready instead of firmwareLimited. Prevents self-restore that would
+            // immediately hand fans back to macOS after a successful full-blast request.
+            if let c = cachedCapabilities {
+                cachedCapabilities = HelperCapabilities(
+                    available: c.available,
+                    preflightPassed: true,
+                    limits: c.limits,
+                    actualRPM: c.actualRPM,
+                    message: "Maximum cooling active."
+                )
+            }
+            let maxTargets = Dictionary(uniqueKeysWithValues: status.limits.map { ($0.id, $0.maximumRPM) })
+            return .accepted(maxTargets)
         }
 
         guard let confirmed = verifiedReplyTargets(
@@ -261,7 +304,7 @@ actor LocalHelperControlBackend: FanControlBackend {
         ) else {
             _ = await requestRestore()
             finishOverrideLocally()
-            return .unavailable(.firmwareLimited, "The helper returned an invalid target confirmation; fan control was released to macOS.")
+            return .unavailable(.firmwareLimited, "Max (or manual) target confirmation failed; fan control released to macOS. macOS thermal daemon may be overriding.")
         }
 
         hasActiveOverride = true

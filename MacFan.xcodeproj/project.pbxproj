@@ -22,6 +22,7 @@
 		46D2F5E633DC8812783BEF70 /* AlertEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11FACC5077CA9396A5632AF /* AlertEngine.swift */; };
 		4AE7ABFC90071DF87BEE074E /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823AEEEE43989C48771F4B23 /* HistoryStore.swift */; };
 		4BF75D90279FBC474ABE99AE /* HistoryTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D0C96B69AC84FE23EDB112 /* HistoryTierTests.swift */; };
+		4EAFA3ADADE5D81D4D2FACD4 /* LiveModuleDetailPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35B6B2F9A5AB161F177705D /* LiveModuleDetailPage.swift */; };
 		501C1286CD1AFF6E201476FE /* ThermalModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8BDFAB37FFE2436714E993B /* ThermalModels.swift */; };
 		51AF85ECC6B2C8184E851FA1 /* MacFanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E55B7999DFEADE75E6A7F74 /* MacFanApp.swift */; };
 		53E88FA46B3DD19F9753E568 /* MetricModules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8092835921E24CF311EF4C /* MetricModules.swift */; };
@@ -113,6 +114,7 @@
 		DF7B0D15B0D0FFB7BF503496 /* SystemUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemUsageView.swift; sourceTree = "<group>"; };
 		DF98C95B9741B2A921394C81 /* SMCReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMCReader.swift; sourceTree = "<group>"; };
 		E0FF5B4F50A19ADC4D81816B /* MacFan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacFan.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E35B6B2F9A5AB161F177705D /* LiveModuleDetailPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveModuleDetailPage.swift; sourceTree = "<group>"; };
 		E44AF9C562F3B1089262B794 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E74C01F32370E826CF098C88 /* MacFanTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacFanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E8BDFAB37FFE2436714E993B /* ThermalModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalModels.swift; sourceTree = "<group>"; };
@@ -246,6 +248,7 @@
 				5BF4E524D8A68F24EA822FEF /* DashboardView.swift */,
 				C0E92A9E2F3623FD2A39A86A /* DesignSystem.swift */,
 				35D8E1D5AED745CE5C1A0E64 /* InsightsView.swift */,
+				E35B6B2F9A5AB161F177705D /* LiveModuleDetailPage.swift */,
 				8A8092835921E24CF311EF4C /* MetricModules.swift */,
 				04D36D8566090B8E4898133A /* PopoverView.swift */,
 				395D7A755165BAA1F79F2844 /* SensorsView.swift */,
@@ -430,6 +433,7 @@
 				4AE7ABFC90071DF87BEE074E /* HistoryStore.swift in Sources */,
 				F6224701A242710A16DC5289 /* InsightsEngine.swift in Sources */,
 				3682B25EEE43773BB38B014E /* InsightsView.swift in Sources */,
+				4EAFA3ADADE5D81D4D2FACD4 /* LiveModuleDetailPage.swift in Sources */,
 				51AF85ECC6B2C8184E851FA1 /* MacFanApp.swift in Sources */,
 				370393A435F529B84CCC9F1A /* MacFanHelperProtocol.swift in Sources */,
 				53E88FA46B3DD19F9753E568 /* MetricModules.swift in Sources */,

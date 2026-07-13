@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
-/// Left control panel: identity, control status, cooling modes, Smart Boost,
-/// fan bank and manual tuning. Confirmation dialogs stay on DashboardView.
+/// Left control panel (premium compact): identity + nav, capability status with
+/// explanation, vitals strip (sensors/fans/avg-RPM/uptime/health), quick actions micros,
+/// modes + Smart/fan/expert. Uses DesignSystem everywhere. Keeps dense but readable.
 struct DashboardSidebar: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var settings: AppSettings
@@ -10,38 +12,62 @@ struct DashboardSidebar: View {
     @Binding var showClearHistoryConfirmation: Bool
     @State private var isSmartBoostExpanded = false
     @State private var isManualExpanded = false
+    /// Local focus only; the helper still receives a complete validated target map.
+    @State private var selectedFanID: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: MacFanMetrics.spacing) {
                 identityRow
                 navigation
                 statusCard
+                glanceRow
+                    .padding(.top, -3)
+
+                quickActions
+                    .padding(.top, MacFanMetrics.spacingXS)
             }
-            .padding(18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
 
             Divider().overlay(Color.white.opacity(0.05))
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: MacFanMetrics.spacing) {
 
-                VStack(alignment: .leading, spacing: MacFanMetrics.spacingS) {
+                VStack(alignment: .leading, spacing: MacFanMetrics.spacingXS) {
                     Text("Cooling mode").macFanSectionLabel()
                     ForEach([FanMode.system, .smartBoost, .max, .expert]) { mode in
                         SidebarModeButton(
                             mode: mode,
                             activeMode: model.activeMode,
-                            isEnabled: mode == .system || (model.capability.canControl && model.pendingMode == nil),
+                            isEnabled: mode == .system || model.pendingMode == nil || model.pendingMode == mode,
                             isPending: model.pendingMode == mode
                         ) {
                             if mode == .expert, !model.isExpertUnlocked {
                                 showExpertConfirmation = true
                             } else {
+                                if mode != .system && !model.capability.canControl {
+                                    model.forceCapabilityRefresh()
+                                }
                                 model.activate(mode)
                             }
                         }
                     }
+
+                    // Current mode explanation — compact, interesting context without clutter.
+                    // Uses active accent for micro LiveDot. Lightweight single-line.
+                    HStack(spacing: 5) {
+                        LiveDot(color: model.activeMode.uiAccent.opacity(0.75))
+                        Text(modeExplanation)
+                            .macFanCallout()
+                            .foregroundStyle(Color.macFanSecondary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.top, 0)
+                    .padding(.bottom, 2)
                 }
 
                 comfortCoolCard
@@ -58,7 +84,7 @@ struct DashboardSidebar: View {
                 }
                 .tint(Color.macFanSecondary)
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: MacFanMetrics.spacingXS) {
                     Text("Fan bank").macFanSectionLabel()
                     if model.snapshot.fans.isEmpty {
                         Text("No live fan reading yet.")
@@ -66,10 +92,22 @@ struct DashboardSidebar: View {
                             .foregroundStyle(Color.macFanSecondary)
                     } else {
                         ForEach(model.snapshot.fans) { fan in
-                            FanMeter(fan: fan)
-                                .padding(MacFanMetrics.cardPaddingS)
-                                .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous))
-                                .overlay { RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous).stroke(Color.white.opacity(0.06), lineWidth: 1) }
+                            Button {
+                                selectedFanID = fan.id
+                                isManualExpanded = true
+                            } label: {
+                                FanMeter(fan: fan, isSelected: selectedFanID == fan.id)
+                                    .padding(MacFanMetrics.cardPaddingS)
+                                    .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
+                            .overlay {
+                                RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous)
+                                    .stroke(selectedFanID == fan.id ? Color.macFanAmber.opacity(0.45) : Color.white.opacity(0.06), lineWidth: 1)
+                            }
+                            .accessibilityIdentifier("fan-select-\(fan.id)")
+                            .accessibilityHint("Select this fan for manual tuning")
                         }
                     }
                 }
@@ -86,13 +124,13 @@ struct DashboardSidebar: View {
                 }
                 .tint(Color.macFanSecondary)
 
-                HStack {
-                    Button("Clear local history", role: .destructive) { showClearHistoryConfirmation = true }
+                HStack(spacing: 6) {
+                    Button("Clear history", role: .destructive) { showClearHistoryConfirmation = true }
                         .buttonStyle(MacFanPressableStyle(pressedScale: 0.95))
                         .macFanCaption()
                         .foregroundStyle(Color.macFanMuted)
                     Spacer()
-                    Text("Local only")
+                    Text("Local")
                         .macFanCaption()
                         .foregroundStyle(Color.macFanMuted)
                 }
@@ -103,7 +141,7 @@ struct DashboardSidebar: View {
     }
 
     private var navigation: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: MacFanMetrics.spacingXS) {
             Text("Dashboard")
                 .macFanSectionLabel()
                 .padding(.horizontal, 4)
@@ -128,8 +166,8 @@ struct DashboardSidebar: View {
                                 .frame(width: 5, height: 5)
                         }
                     }
-                    .padding(.horizontal, 11)
-                    .frame(height: 40)
+                    .padding(.horizontal, 9)
+                    .frame(height: 32)
                     .background {
                         if selectedTab == tab {
                             RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -195,45 +233,283 @@ struct DashboardSidebar: View {
                     .foregroundStyle(Color.macFanMuted)
             }
         }
+        .padding(.bottom, 2)
+        .background(GrainOverlay(opacity: 0.006, density: 140, dotSize: 0.38).clipShape(RoundedRectangle(cornerRadius: 8)), alignment: .topLeading)
     }
 
     private var statusCard: some View {
-        let ready = model.capability.canControl
+        let cap = model.capability
+        let ready = cap.canControl
         let tint: Color = ready ? .macFanMint : .macFanAmberLight
-        return Group {
-            if ready {
-                HStack(spacing: 9) {
-                    LiveDot(color: tint)
-                    Text("Failsafe active")
-                        .macFanHeadline()
-                        .foregroundStyle(Color.macFanPrimary)
-                    Spacer()
-                    Text("Auto on exit")
+        return VStack(alignment: .leading, spacing: MacFanMetrics.spacingXS) {
+            // Keep the title and the safety affordance in separate columns. The
+            // old single-line row gave "Control ready" and its badge competing
+            // widths, which produced the visible "Control re…" truncation.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                LiveDot(color: tint)
+                Text(ready ? "Control ready" : cap.shortReason)
+                    .macFanHeadline()
+                    .foregroundStyle(Color.macFanPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .accessibilityIdentifier("control-status-title")
+                if !cap.monitorLabel.isEmpty {
+                    Text(cap.monitorLabel)
                         .macFanCallout()
                         .foregroundStyle(Color.macFanSecondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.white.opacity(0.04), in: Capsule())
+                }
+                Spacer(minLength: 0)
+                if ready {
                     Image(systemName: "info.circle")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color.macFanMuted)
                         .help("Quitting MacFan or losing its heartbeat immediately returns every fan to Auto.")
                 }
-            } else {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(spacing: 9) {
-                        Image(systemName: "lock.fill").foregroundStyle(tint)
-                        Text("Control setup required")
-                            .macFanHeadline()
-                            .foregroundStyle(Color.macFanPrimary)
-                    }
-                    Text(model.capability.detail)
+            }
+
+            if ready {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.shield")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.macFanMint)
+                    Text("Auto on exit · watchdog protected")
                         .macFanCallout()
                         .foregroundStyle(Color.macFanSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
                 }
+                .padding(.leading, 2)
+            }
+
+            // Two readable lines beat a single clipped sentence. The full
+            // capability detail remains available through the card's help text.
+            Text(cap.canControl ? "Smart Boost, Max, and Expert are ready." : "Monitoring stays active; fan control is unavailable.")
+                .macFanBody()
+                .foregroundStyle(Color.macFanSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 2)
+
+            if !ready {
+                Text("Why: \(cap.whyMessage)")
+                    .macFanSubhead()
+                    .foregroundStyle(Color.macFanSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 2)
+                HStack(spacing: 6) {
+                    Button("Recheck") { model.forceCapabilityRefresh() }
+                        .buttonStyle(MacFanPressableStyle(pressedScale: 0.94))
+                        .macFanCallout()
+                        .foregroundStyle(Color.macFanSecondary)
+                    Button("Open Settings") {
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    }
+                        .buttonStyle(MacFanPressableStyle(pressedScale: 0.94))
+                        .macFanCallout()
+                        .foregroundStyle(Color.macFanBlue)
+                }
+                .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(MacFanMetrics.cardPaddingS)
         .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous).stroke(Color.white.opacity(0.065), lineWidth: 0.5) }
+        .overlay {
+            RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous)
+                .stroke(Color.white.opacity(0.065), lineWidth: 0.5)
+            GrainOverlay(opacity: MacFanMetrics.grainOpacity * 0.5, density: 110, dotSize: 0.42)
+                .clipShape(RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous))
+        }
+        .help([cap.whatItMeans, cap.whyMessage, cap.howToFix]
+            .filter { !$0.isEmpty }
+            .joined(separator: " "))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("control-status-card")
+        .accessibilityLabel(ready ? "Control ready. Auto on exit." : "\(cap.shortReason). Monitoring only.")
+    }
+
+    /// Compact, scannable vitals strip. Beautiful micros using DesignSystem (LiveDot, macFanNumber,
+    /// 8pt rhythm, capsules). Adds avg fan RPM + richer health for interesting at-a-glance data.
+    /// Lightweight: snapshot + ProcessInfo only.
+    private var glanceRow: some View {
+        let sensorCount = model.snapshot.sensors.count
+        let fanCount = model.snapshot.fans.count
+        let ready = model.capability.canControl
+        let healthTint: Color = ready ? .macFanMint : .macFanAmberLight
+        let thermal = model.snapshot.displayTemperature?.celsius
+        let band = thermal.map { ThermalPalette.band(for: $0) } ?? .muted
+        let avgRPM = model.snapshot.averageActualRPM
+        let avgText = avgRPM.map { "\(Int($0))" } ?? "—"
+
+        return HStack(spacing: 5) {
+            glanceMetric(icon: ready ? "checkmark.shield.fill" : "lock.slash", value: ready ? "Ready" : "Read-only", tint: healthTint)
+            glanceMetric(icon: "sensor.tag.radiowaves.forward", value: "\(sensorCount)s", tint: .macFanIndigo)
+            glanceMetric(icon: "fanblades.fill", value: "\(fanCount)f", tint: .macFanViolet)
+            if fanCount > 0 { glanceMetric(icon: "gauge.medium", value: avgText, tint: .macFanCyan) }
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                Circle().fill(band.color.opacity(0.9)).frame(width: 5, height: 5)
+                Text(healthLabel(ready: ready, band: band, temp: thermal))
+                    .macFanCallout()
+                    .foregroundStyle(Color.macFanSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+            .help("Session uptime: \(uptimeText(ProcessInfo.processInfo.systemUptime))")
+        }
+        .macFanLabel(tracking: 0.1)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 5)
+        .background(
+            Color.macFanSurfaceHigh.opacity(0.6),
+            in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
+        )
+        .overlay {
+            GrainOverlay(opacity: MacFanMetrics.grainOpacity * 0.55, density: 128, dotSize: 0.4)
+                .clipShape(RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
+                .stroke(Color.macFanStroke.opacity(0.32), lineWidth: 0.5)
+        }
+    }
+
+    private func glanceMetric(icon: String, value: String, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(value)
+                .macFanNumber(10, weight: .semibold)
+                .foregroundStyle(Color.macFanPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(0.035), in: Capsule(style: .continuous))
+    }
+
+    /// Ultra-compact quick actions using micros. Icon-forward, high-signal, premium feel.
+    /// Aligned to DesignSystem: tight capsules, pressables, accents, haptics.
+    private var quickActions: some View {
+        let canControl = model.capability.canControl
+        let hasPending = model.pendingMode != nil
+        let burstActive = model.coolBurstUntil != nil
+
+        return HStack(spacing: 5) {
+            quickActionButton(
+                icon: "moon",
+                label: "Auto",
+                accent: .macFanBlue,
+                disabled: hasPending,
+                action: { model.activate(.system); MacFanHaptics.tick() }
+            )
+
+            quickActionButton(
+                icon: "sparkles",
+                label: "Smart",
+                accent: .macFanViolet,
+                disabled: !canControl || hasPending,
+                action: { model.activate(.smartBoost); MacFanHaptics.tick() }
+            )
+
+            quickActionButton(
+                icon: "bolt.fill",
+                label: burstActive ? "Stop" : "Burst",
+                accent: .macFanCoral,
+                disabled: !canControl || hasPending,
+                isActive: burstActive,
+                action: {
+                    if burstActive { model.activate(.system) } else { model.startCoolBurst() }
+                    MacFanHaptics.success()
+                }
+            )
+
+            // Keep-cool is a full-width action like the other three controls.
+            // The previous icon-only button made the four-item row collapse
+            // into clipped glyphs at the compact sidebar width.
+            let coolOn = model.keepCoolAtLaunch
+            quickActionButton(
+                icon: "snowflake",
+                label: "Cool",
+                accent: .macFanCyan,
+                disabled: hasPending || (!canControl && !coolOn),
+                isActive: coolOn,
+                action: {
+                    if coolOn { model.stopComfortCooling() } else { model.engageComfortCooling() }
+                    MacFanHaptics.tick()
+                }
+            )
+            .help(coolOn ? "Disable keep-cool" : "Keep lap cool (ramps at 80°C)")
+        }
+        // Four equal columns keep the row legible at the 276pt sidebar width.
+        // Each action may shrink its caption slightly, but never ellipsizes it.
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func quickActionButton(icon: String, label: String, accent: Color, disabled: Bool, isActive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(isActive ? accent : (disabled ? Color.macFanMuted : accent))
+                Text(label)
+                    .macFanCaption()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .foregroundStyle(isActive ? Color.macFanPrimary : (disabled ? Color.macFanMuted : Color.macFanSecondary))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                isActive ? accent.opacity(0.18) : Color.white.opacity(disabled ? 0.02 : 0.045),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(isActive ? accent.opacity(0.35) : Color.white.opacity(0.08), lineWidth: 0.5)
+            }
+            .frame(maxWidth: .infinity, minHeight: 28)
+        }
+        .buttonStyle(MacFanPressableStyle(pressedScale: 0.94))
+        .macFanHoverLift()
+        .disabled(disabled)
+        .opacity(disabled ? 0.55 : 1)
+    }
+
+    private func uptimeText(_ interval: TimeInterval) -> String {
+        let secs = max(0, Int(interval))
+        let h = secs / 3600
+        let m = (secs % 3600) / 60
+        if h >= 24 { return "\(h / 24)d \(h % 24)h" }
+        if h > 0 { return "\(h)h \(m)m" }
+        return "\(m)m"
+    }
+
+    private func healthLabel(ready: Bool, band: ThermalBand, temp: Double?) -> String {
+        if !ready { return "Read-only" }
+        switch band {
+        case .muted, .cool: return "Cool"
+        case .indigo: return "Balanced"
+        case .violet: return "Warm"
+        case .amber: return "Elevated"
+        case .hot: return "Hot"
+        }
+    }
+
+    private var modeExplanation: String {
+        switch model.activeMode {
+        case .system: "macOS decides fan speeds for balance and quiet."
+        case .smartBoost: "Heat-aware: boosts only while needed, then eases."
+        case .max: "Full blast on every fan. Highest airflow."
+        case .expert: "Per-fan or curve targets. Advanced only."
+        }
     }
 
     /// One-tap comfort cooling — set it once and MacFan keeps the chassis off
@@ -268,9 +544,9 @@ struct DashboardSidebar: View {
                     Circle().fill(.white).frame(width: 17, height: 17).offset(x: on ? 8 : -8)
                 }
             }
-            .padding(13)
-            .background(on ? tint.opacity(0.08) : Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(on ? tint.opacity(0.30) : Color.white.opacity(0.06), lineWidth: on ? 1 : 0.5) }
+            .padding(10)
+            .background(on ? tint.opacity(0.08) : Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(on ? tint.opacity(0.30) : Color.white.opacity(0.06), lineWidth: on ? 1 : 0.5) }
         }
         .buttonStyle(MacFanPressableStyle(pressedScale: 0.985))
         .animation(reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.80), value: on)
@@ -325,16 +601,16 @@ struct DashboardSidebar: View {
                 .padding(.top, 10)
             Text(model.capability.canControl
                  ? "Arms at \(Int(model.smartBoostPolicy.triggerCelsius))°C, requests Max only while hot, then eases back to Auto \(Int(model.smartBoostPolicy.cooldownHold / 60)) min after it cools \(Int(model.smartBoostPolicy.cooldownDelta))°C."
-                 : "Available only after verified experimental control passes preflight.")
+                 : "Control required for Smart Boost.")
                 .macFanCallout()
                 .lineSpacing(2)
                 .foregroundStyle(Color.macFanSecondary)
                 .padding(.top, 10)
         }
         .opacity(model.capability.canControl ? 1 : 0.55)
-        .padding(MacFanMetrics.cardPadding)
-        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusL, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: MacFanMetrics.radiusL, style: .continuous).stroke(Color.white.opacity(0.06), lineWidth: 1) }
+        .padding(MacFanMetrics.cardPaddingS)
+        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous).stroke(Color.white.opacity(0.06), lineWidth: 0.5) }
     }
 
     @ViewBuilder
@@ -346,11 +622,12 @@ struct DashboardSidebar: View {
         } else if model.isExpertUnlocked {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Manual tuning").macFanSectionLabel()
+                fanSelectionStrip
                 expertControls
             }
-            .padding(MacFanMetrics.cardPadding)
-            .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusL, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: MacFanMetrics.radiusL, style: .continuous).stroke(Color.macFanAmber.opacity(0.18), lineWidth: 1) }
+            .padding(MacFanMetrics.cardPaddingS)
+            .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: MacFanMetrics.radius, style: .continuous).stroke(Color.macFanAmber.opacity(0.18), lineWidth: 0.75) }
         } else {
             Button { showExpertConfirmation = true } label: {
                 HStack(spacing: 9) {
@@ -378,43 +655,11 @@ struct DashboardSidebar: View {
                 .macFanCallout()
                 .foregroundStyle(Color.macFanSecondary)
         } else {
-            ForEach(model.snapshot.fans) { fan in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(fan.name).macFanLabel(tracking: 0.8).foregroundStyle(Color.macFanPrimary)
-                        Spacer()
-                        Text("\(Int((model.expertRPM[fan.id] ?? fan.actualRPM).rounded())) RPM")
-                            .macFanNumber(11, weight: .bold)
-                            .foregroundStyle(Color.macFanAmberLight)
-                    }
-                    Slider(
-                        value: Binding(
-                            get: { model.expertRPM[fan.id] ?? max(fan.minimumRPM, fan.actualRPM) },
-                            set: { model.expertRPM[fan.id] = min(max($0, fan.minimumRPM), fan.maximumRPM) }
-                        ),
-                        in: fan.minimumRPM...max(fan.minimumRPM + 1, fan.maximumRPM),
-                        step: 25
-                    )
-                    .tint(.macFanAmber)
-                    HStack(spacing: 6) {
-                        Text("\(Int(fan.minimumRPM))")
-                            .macFanCaption()
-                            .foregroundStyle(Color.macFanMuted)
-                        Spacer()
-                        ForEach([0.5, 0.75, 1.0], id: \.self) { fraction in
-                            ManualPresetButton(title: fraction == 1 ? "Max" : "\(Int(fraction * 100))%") {
-                                setExpertTarget(fan: fan, fraction: fraction)
-                            }
-                        }
-                        Spacer()
-                        Text("\(Int(fan.maximumRPM))")
-                            .macFanCaption()
-                            .foregroundStyle(Color.macFanMuted)
-                    }
-                }
-                .padding(MacFanMetrics.cardPaddingS)
-                .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous))
-            }
+            let fan = model.snapshot.fans.first(where: { $0.id == selectedFanID }) ?? model.snapshot.fans[0]
+            fanControlCard(for: fan)
+            Text("Apply keeps every other fan at its current safe target.")
+                .macFanCaption()
+                .foregroundStyle(Color.macFanMuted)
             Toggle("Use temperature curve", isOn: $model.expertUsesCurve)
                 .macFanLabel(tracking: 0.6)
                 .tint(.macFanAmber)
@@ -435,6 +680,78 @@ struct DashboardSidebar: View {
             .background(Color.macFanAmber, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .accessibilityIdentifier("apply-manual-speeds")
         }
+    }
+
+    private var fanSelectionStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Tune one fan")
+                .macFanCaption()
+                .foregroundStyle(Color.macFanSecondary)
+            HStack(spacing: 5) {
+                ForEach(model.snapshot.fans) { fan in
+                    let selected = (selectedFanID ?? model.snapshot.fans.first?.id) == fan.id
+                    Button {
+                        selectedFanID = fan.id
+                        MacFanHaptics.tick()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "fanblades.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text(fan.name)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .macFanCaption()
+                        .foregroundStyle(selected ? Color.macFanPrimary : Color.macFanSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                        .background(selected ? Color.macFanAmber.opacity(0.16) : Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(selected ? Color.macFanAmber.opacity(0.42) : Color.white.opacity(0.07), lineWidth: selected ? 1 : 0.5) }
+                    }
+                    .buttonStyle(MacFanPressableStyle(pressedScale: 0.96))
+                    .accessibilityIdentifier("manual-fan-\(fan.id)")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fanControlCard(for fan: FanReading) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(fan.name).macFanLabel(tracking: 0.8).foregroundStyle(Color.macFanPrimary)
+                Spacer()
+                Text("\(Int((model.expertRPM[fan.id] ?? fan.actualRPM).rounded())) RPM")
+                    .macFanNumber(11, weight: .bold)
+                    .foregroundStyle(Color.macFanAmberLight)
+            }
+            Slider(
+                value: Binding(
+                    get: { model.expertRPM[fan.id] ?? max(fan.minimumRPM, fan.actualRPM) },
+                    set: { model.expertRPM[fan.id] = min(max($0, fan.minimumRPM), fan.maximumRPM) }
+                ),
+                in: fan.minimumRPM...max(fan.minimumRPM + 1, fan.maximumRPM),
+                step: 25
+            )
+            .tint(.macFanAmber)
+            HStack(spacing: 6) {
+                Text("\(Int(fan.minimumRPM))")
+                    .macFanCaption()
+                    .foregroundStyle(Color.macFanMuted)
+                Spacer()
+                ForEach([0.5, 0.75, 1.0], id: \.self) { fraction in
+                    ManualPresetButton(title: fraction == 1 ? "Max" : "\(Int(fraction * 100))%") {
+                        setExpertTarget(fan: fan, fraction: fraction)
+                    }
+                }
+                Spacer()
+                Text("\(Int(fan.maximumRPM))")
+                    .macFanCaption()
+                    .foregroundStyle(Color.macFanMuted)
+            }
+        }
+        .padding(MacFanMetrics.cardPaddingS)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous))
     }
 
     private func setExpertTarget(fan: FanReading, fraction: Double) {
@@ -562,11 +879,11 @@ struct SidebarModeButton: View {
                 value: isActive
             )
             .animation(reduceMotion ? nil : MacFanMetrics.springFast, value: isPending)
-            .padding(.horizontal, 13)
-            .padding(.vertical, 12)
-            .background(isActive ? Color.white.opacity(0.07) : Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .background(isActive ? Color.white.opacity(0.07) : Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(isActive ? accent.opacity(0.28) : Color.white.opacity(0.055), lineWidth: isActive ? 1 : 0.5)
             }
         }
@@ -574,7 +891,8 @@ struct SidebarModeButton: View {
         .macFanHoverSpecial()
         .disabled(!isEnabled)
         .opacity(isEnabled || isPending ? 1 : 0.48)
-        .accessibilityHint(isEnabled ? mode.subtitle : "Unavailable until experimental control has passed preflight")
+        .accessibilityHint(isEnabled ? mode.subtitle : "Click to attempt control (triggers preflight if needed). Disabled only for expert without unlock, or pending.")
+        .help(isEnabled ? mode.subtitle : "Click to try full blast/control. May acquire helper. See status banner for why limited.")
         .accessibilityIdentifier("mode-\(mode.rawValue)")
     }
 }

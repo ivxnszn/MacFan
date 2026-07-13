@@ -1,5 +1,39 @@
 import SwiftUI
 
+/// Identifies a live sensor module for drill-down navigation (new dedicated detail page).
+enum SensorModule: String, CaseIterable, Identifiable {
+    case processorLoad = "processor"
+    case memory
+    case processorTemp = "temperature"
+    case battery
+    case network
+    case disk
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .processorLoad: "Processor Load"
+        case .memory: "Memory"
+        case .processorTemp: "Processor Temperature"
+        case .battery: "Battery"
+        case .network: "Network Activity"
+        case .disk: "Disk"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .processorLoad: "cpu"
+        case .memory: "memorychip"
+        case .processorTemp: "thermometer.medium"
+        case .battery: "battery.75percent"
+        case .network: "network"
+        case .disk: "internaldrive"
+        }
+    }
+}
+
 /// The design's "Live sensors" modular grid: six Usage-style metric cards
 /// mixing host counters with thermal data, each with a compact visualization.
 /// Owns its sampler, so nothing polls while the Overview tab is hidden.
@@ -11,8 +45,11 @@ struct OverviewModules: View {
     @State private var networkTrail: [(down: Double, up: Double)] = []
     private let sampler = SystemUsageSampler()
 
+    /// Optional: when provided, modules become tappable and invoke this with the corresponding module.
+    var onSelectModule: ((SensorModule) -> Void)? = nil
+
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 220, maximum: 360), spacing: 13)]
+        [GridItem(.adaptive(minimum: 210, maximum: 340), spacing: 12)]
     }
 
     var body: some View {
@@ -21,21 +58,28 @@ struct OverviewModules: View {
                 Image(systemName: "dot.radiowaves.left.and.right")
                     .macFanSubhead()
                     .foregroundStyle(Color.macFanSecondary)
-                Text("Live sensors")
+                Text("Live metrics")
                     .macFanHeadline()
                     .foregroundStyle(Color.macFanPrimary)
-                Text("6 active")
+                Text("\(SensorModule.allCases.count) active")
                     .macFanChartTick()
                     .foregroundStyle(Color.macFanMuted)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .overlay { RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.white.opacity(0.055), lineWidth: 1) }
+                if onSelectModule != nil {
+                    Text("tap for depth")
+                        .macFanChartTick()
+                        .foregroundStyle(Color.macFanVioletLight.opacity(0.8))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                }
                 Spacer()
             }
             .padding(.top, 8)
 
-            LazyVGrid(columns: columns, spacing: 13) {
+            LazyVGrid(columns: columns, spacing: 12) {
                 processorModule
                 memoryModule
                 temperatureModule
@@ -72,10 +116,12 @@ struct OverviewModules: View {
             unit: "%",
             sub: usage.map { "\($0.perCorePercent.count) cores active" } ?? "Sampling…",
             badge: usage.map { $0.thermalStateRaw == 0 ? "Nominal" : $0.thermalStateTitle } ?? "…",
-            badgeTone: (usage?.thermalStateRaw ?? 0) >= 2 ? .warn : .ok
-        ) {
-            MiniBars(values: (usage?.perCorePercent ?? []).prefix(12).map { $0 / 100 })
-        }
+            badgeTone: (usage?.thermalStateRaw ?? 0) >= 2 ? .warn : .ok,
+            visualization: {
+                MiniBars(values: (usage?.perCorePercent ?? []).prefix(12).map { $0 / 100 })
+            },
+            action: onSelectAction(for: .processorLoad)
+        )
     }
 
     private var memoryModule: some View {
@@ -88,10 +134,12 @@ struct OverviewModules: View {
             unit: "%",
             sub: usage.map { "\(SystemUsageView.gigabytes($0.memoryUsedBytes)) / \(SystemUsageView.gigabytes($0.memoryTotalBytes)) GB" } ?? "Sampling…",
             badge: swap > 0 ? "\(Int(Double(swap) / 1_048_576)) MB swap" : "No swap",
-            badgeTone: swap > 0 ? .warn : .ok
-        ) {
-            ArcGauge(fraction: (usage?.memoryPercent ?? 0) / 100, from: .macFanBlue, to: .macFanCyan)
-        }
+            badgeTone: swap > 0 ? .warn : .ok,
+            visualization: {
+                ArcGauge(fraction: (usage?.memoryPercent ?? 0) / 100, from: .macFanBlue, to: .macFanCyan)
+            },
+            action: onSelectAction(for: .memory)
+        )
     }
 
     private var temperatureModule: some View {
@@ -113,29 +161,36 @@ struct OverviewModules: View {
             unit: "°",
             sub: trend,
             badge: band.label,
-            badgeTone: band == .amber || band == .hot ? .warn : .ok
-        ) {
-            if temps.count > 1 {
-                Sparkline(values: temps, color: .macFanPurple)
-                    .frame(width: 76, height: 42)
-            } else {
-                Color.clear.frame(width: 76, height: 42)
-            }
-        }
+            badgeTone: band == .amber || band == .hot ? .warn : .ok,
+            visualization: {
+                if temps.count > 1 {
+                    Sparkline(values: temps, color: .macFanPurple)
+                        .frame(width: 76, height: 42)
+                } else {
+                    Color.clear.frame(width: 76, height: 42)
+                }
+            },
+            action: onSelectAction(for: .processorTemp)
+        )
     }
 
     private var batteryModule: some View {
         let percent = usage?.batteryPercent
         let charging = usage?.batteryCharging == true
-        let sub: String
-        if percent == nil {
-            sub = "No internal battery"
-        } else if let minutes = usage?.batteryMinutesRemaining {
-            sub = "\(charging ? "Charging" : "On battery") · \(minutes / 60)h \(minutes % 60)m"
-        } else {
-            sub = charging ? "Charging" : "On battery or full"
+        let watts = usage?.batteryWatts
+        var sub = "No internal battery"
+        if percent != nil {
+            var pieces: [String] = [charging ? "Charging" : "On battery"]
+            if charging, let w = watts, w > 0.1 { pieces.append(String(format: "+%.1f W", w)) }
+            else if let w = watts, w > 0.1 { pieces.append(String(format: "%.1f W", w)) }
+            if let minutes = usage?.batteryMinutesRemaining {
+                pieces.append("\(minutes / 60)h \(minutes % 60)m")
+            }
+            sub = pieces.joined(separator: " · ")
         }
         let batterySensor = model.snapshot.sensors.first { $0.name.localizedCaseInsensitiveContains("battery") }
+        let badgeText = batterySensor.map { settings.temperatureUnit.degreesWithUnit($0.celsius) }
+            ?? (percent != nil ? (watts.map { _ in "Internal + power (I×V)" } ?? "Internal battery") : "Desktop Mac")
         return MetricModuleCard(
             icon: "battery.75percent",
             iconTint: .macFanSecondary,
@@ -143,11 +198,13 @@ struct OverviewModules: View {
             value: percent.map { "\(Int($0.rounded()))" } ?? "—",
             unit: percent != nil ? "%" : "",
             sub: sub,
-            badge: batterySensor.map { settings.temperatureUnit.degreesWithUnit($0.celsius) } ?? (percent != nil ? "Internal battery" : "Desktop Mac"),
-            badgeTone: .purple
-        ) {
-            SegmentedDial(fraction: (percent ?? 0) / 100, tint: .macFanVioletLight)
-        }
+            badge: badgeText,
+            badgeTone: .purple,
+            visualization: {
+                SegmentedDial(fraction: (percent ?? 0) / 100, tint: .macFanVioletLight)
+            },
+            action: onSelectAction(for: .battery)
+        )
     }
 
     private var networkModule: some View {
@@ -162,10 +219,12 @@ struct OverviewModules: View {
             unit: down == nil ? "" : " kb/s",
             sub: down == nil ? "measuring…" : "↓ \(formatRate(down ?? 0)) · ↑ \(formatRate(up ?? 0)) kb/s",
             badge: "All interfaces",
-            badgeTone: .neutral
-        ) {
-            MirrorBars(pairs: networkTrail)
-        }
+            badgeTone: .neutral,
+            visualization: {
+                MirrorBars(pairs: networkTrail)
+            },
+            action: onSelectAction(for: .network)
+        )
     }
 
     private var diskModule: some View {
@@ -178,10 +237,17 @@ struct OverviewModules: View {
             unit: total > 0 ? "%" : "",
             sub: usage.flatMap { total > 0 ? "\(SystemUsageView.gigabytes($0.diskUsedBytes)) / \(SystemUsageView.gigabytes(total)) GB" : nil } ?? "capacity unavailable",
             badge: FileManager.default.displayName(atPath: "/"),
-            badgeTone: .neutral
-        ) {
-            ArcGauge(fraction: (usage?.diskPercent ?? 0) / 100, from: .macFanViolet, to: .macFanVioletLight)
-        }
+            badgeTone: .neutral,
+            visualization: {
+                ArcGauge(fraction: (usage?.diskPercent ?? 0) / 100, from: .macFanViolet, to: .macFanVioletLight)
+            },
+            action: onSelectAction(for: .disk)
+        )
+    }
+
+    private func onSelectAction(for module: SensorModule) -> (() -> Void)? {
+        guard let onSelectModule else { return nil }
+        return { onSelectModule(module) }
     }
 
     private func formatRate(_ kbps: Double) -> String {
@@ -214,9 +280,10 @@ struct MetricModuleCard<Viz: View>: View {
     let badge: String
     let badgeTone: ModuleBadgeTone
     @ViewBuilder let visualization: () -> Viz
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let cardContent = VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .macFanCallout()
@@ -235,11 +302,12 @@ struct MetricModuleCard<Viz: View>: View {
                             .foregroundStyle(Color.macFanPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
-                            .contentTransition(.numericText())
+                            .macFanLiveNumberTransition()
                         Text(unit)
                             .macFanNumber(14, weight: .medium)
                             .foregroundStyle(Color.macFanSecondary)
                     }
+                    .animation(.easeOut(duration: 0.22), value: value)
                     Text(sub)
                         .macFanCallout()
                         .foregroundStyle(Color.macFanSecondary)
@@ -268,6 +336,20 @@ struct MetricModuleCard<Viz: View>: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityValue("\(value)\(unit), \(sub), \(badge)")
+
+        if let action {
+            return AnyView(
+                Button(action: action) {
+                    cardContent
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(MacFanPressableStyle())
+                .macFanHoverSpecial()
+                .help("Tap for detailed view and charts")
+            )
+        } else {
+            return AnyView(cardContent)
+        }
     }
 }
 

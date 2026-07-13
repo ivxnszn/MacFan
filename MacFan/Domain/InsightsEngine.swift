@@ -278,4 +278,101 @@ enum InsightsEngine {
         let next = index + 1 < history.count ? history[index + 1].timestamp : now
         return min(max(next.timeIntervalSince(sample.timestamp), 0), dwellCap)
     }
+
+    // MARK: - Data hacking helpers for premium recaps (past agent ideas: band durations, response lag, coverage-weighted stats)
+    /// Coverage-weighted average temperature from recorded samples. Uses display CPU temp.
+    static func averageTemperature(history: [TelemetrySample]) -> Double? {
+        var weightedSum: Double = 0
+        var totalCoverage: TimeInterval = 0
+        for (index, sample) in history.enumerated() {
+            guard let temp = sample.displayTemperatureCelsius else { continue }
+            let cov = sample.recordedCoverageSeconds ?? observedDwell(for: sample, at: index, history: history, now: .now)
+            guard cov > 0 else { continue }
+            weightedSum += temp * cov
+            totalCoverage += cov
+        }
+        guard totalCoverage > 0 else { return nil }
+        return weightedSum / totalCoverage
+    }
+
+    /// Fraction of recorded time spent in each thermal band. Prefers exact bandDurations when present.
+    static func bandDistribution(history: [TelemetrySample]) -> [ThermalBand: Double] {
+        var totals: [ThermalBand: TimeInterval] = [:]
+        var total: TimeInterval = 0
+        for (index, sample) in history.enumerated() {
+            if let bandDurs = sample.thermalBandDurations {
+                for (band, dur) in bandDurs {
+                    totals[band, default: 0] += max(0, dur)
+                    total += max(0, dur)
+                }
+            } else if let temp = sample.displayTemperatureCelsius {
+                let cov = sample.recordedCoverageSeconds ?? observedDwell(for: sample, at: index, history: history, now: .now)
+                guard cov > 0 else { continue }
+                let band = ThermalPalette.band(for: temp)
+                totals[band, default: 0] += cov
+                total += cov
+            }
+        }
+        guard total > 0 else { return [:] }
+        return totals.mapValues { $0 / total }
+    }
+
+    /// Simple response correlation score derived from observed fan matches vs heat episodes.
+    /// Returns label + severity hint for UI to map to color. Reuses existing fanResponseMatch logic (data hacking for recap).
+    static func responseCorrelationLabel(history: [TelemetrySample], hardwareMaximumRPM: Double?) -> (label: String, severity: Insight.Severity, detail: String) {
+        guard let maxRPM = hardwareMaximumRPM, maxRPM > 0 else {
+            return ("No fan data", .info, "Fan telemetry unavailable for correlation")
+        }
+        let hotEpisodes = history.filter { ($0.displayMaximumTemperatureCelsius ?? -.infinity) >= hotThresholdCelsius }
+        guard !hotEpisodes.isEmpty else {
+            return ("Stable cool", .info, "No elevated episodes — excellent baseline")
+        }
+        if let match = fanResponseMatch(history: history, hardwareMaximumRPM: maxRPM) {
+            let lag = match.seconds
+            if lag < 45 {
+                return ("Fast response", .info, "Fans reached 90% max within \(durationText(lag)) of heat")
+            } else if lag < 180 {
+                return ("Responsive", .notice, "Lag \(durationText(lag)) — within healthy window")
+            } else {
+                return ("Delayed response", .notice, "Lag \(durationText(lag)) — consider Smart mode")
+            }
+        }
+        return ("Limited response", .info, "Heat crossed threshold but no near-max fan observed")
+    }
+
+    // MARK: - Additional lightweight helpers for richer premium recaps (swing, stability, actionable context)
+
+    /// Observed temperature swing (max - min display CPU) across the history window. Uses extrema when present.
+    static func temperatureSwing(history: [TelemetrySample]) -> Double? {
+        let mins = history.compactMap(\.displayMinimumTemperatureCelsius)
+        let maxs = history.compactMap(\.displayMaximumTemperatureCelsius)
+        guard let overallMin = mins.min(), let overallMax = maxs.max(), overallMax > overallMin else { return nil }
+        return overallMax - overallMin
+    }
+
+    /// Rough count of distinct hot episodes (transitions into >= hot threshold after a cool period). Caps at small number for glance.
+    static func hotEpisodeCount(history: [TelemetrySample], threshold: Double = hotThresholdCelsius) -> Int {
+        var count = 0
+        var inHot = false
+        for sample in history.sorted(by: { $0.timestamp < $1.timestamp }) {
+            let t = sample.displayMaximumTemperatureCelsius ?? -.infinity
+            if t >= threshold {
+                if !inHot {
+                    count += 1
+                    inHot = true
+                }
+            } else if t < threshold - 3 {
+                inHot = false
+            }
+        }
+        return min(count, 9)
+    }
+
+    /// Fraction of time considered "cool" (below indigo) for actionable % context.
+    static func coolFraction(history: [TelemetrySample]) -> Double {
+        let fracs = bandDistribution(history: history)
+        let cool = fracs[.cool] ?? 0
+        let indigo = fracs[.indigo] ?? 0
+        return min(1, cool + indigo * 0.6) // partial credit for balanced
+    }
 }
