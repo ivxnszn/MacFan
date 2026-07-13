@@ -1,0 +1,93 @@
+name: MacFan
+options:
+  minimumXcodeGenVersion: 2.38.0
+  createIntermediateGroups: true
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "5.0"
+    CLANG_ENABLE_MODULES: YES
+    CODE_SIGN_STYLE: Automatic
+  configs:
+    Release:
+      CLANG_ENABLE_CODE_COVERAGE: NO
+      GCC_GENERATE_TEST_COVERAGE_FILES: NO
+      GCC_INSTRUMENT_PROGRAM_FLOW_ARCS: NO
+targets:
+  MacFan:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MacFan
+        excludes:
+          - Resources/Info.plist
+    info:
+      path: MacFan/Resources/Info.plist
+      properties:
+        LSUIElement: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.macfan
+        PRODUCT_NAME: MacFan
+        PRODUCT_MODULE_NAME: MacFan
+        ENABLE_APP_SANDBOX: NO
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        OTHER_LDFLAGS:
+          - "-lsqlite3"
+  MacFanHelper:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: MacFanHelper
+      - path: MacFan/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.macfan.helper
+        PRODUCT_NAME: MacFanHelper
+        PRODUCT_MODULE_NAME: MacFanHelper
+        ARCHS: arm64
+        ENABLE_APP_SANDBOX: NO
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+  MacFanTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - MacFanTests
+    dependencies:
+      - target: MacFan
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  MacFanUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - MacFanUITests
+    dependencies:
+      - target: MacFan
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  MacFan:
+    build:
+      targets:
+        MacFan: all
+        MacFanHelper: all
+        MacFanTests: [test]
+        MacFanUITests: [test]
+    test:
+      targets:
+        - MacFanTests
+        - MacFanUITests
+      # Coverage probes add counters to every scheme build, including the
+      # locally installed Release app in current Xcode versions. Correctness
+      # tests remain enabled; instrumentation is deliberately opt-in.
+      gatherCoverageData: false

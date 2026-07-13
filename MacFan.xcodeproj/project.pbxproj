@@ -1,0 +1,817 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		016F566ADD4C000D08F4715C /* MacFanUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BE924E18340DA0CB525D54 /* MacFanUITests.swift */; };
+		1002C43C4CD22A5B43B30931 /* SystemStatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6550738067A836BC7A00D46C /* SystemStatsService.swift */; };
+		207F06F0750687091BF318BF /* AppSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0BFBCCADB945C80E52026D1 /* AppSettingsTests.swift */; };
+		24B069C4E8D6716B804D5070 /* HistoryGaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = EABF405C37E5EBBF7E4AA319 /* HistoryGaps.swift */; };
+		2ABD8B93BD8002ED2B8592E3 /* DashboardCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 516BAF359A87DA04E763A14D /* DashboardCharts.swift */; };
+		319C090896BDAA50AD36764E /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 839D2C6124C3B4A0AFC8D556 /* StatusItemController.swift */; };
+		332C16C5D33FB3DF8A68EBFD /* FanControlSafety.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0C834B16CE7F5002E5AA54 /* FanControlSafety.swift */; };
+		3682B25EEE43773BB38B014E /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35D8E1D5AED745CE5C1A0E64 /* InsightsView.swift */; };
+		370393A435F529B84CCC9F1A /* MacFanHelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B8E4E085455C61E515BF1FC /* MacFanHelperProtocol.swift */; };
+		3923817143C2BE8EDFE6EF98 /* SMCReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF98C95B9741B2A921394C81 /* SMCReader.swift */; };
+		3CE0DF068C9981613971D9BE /* SensorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 395D7A755165BAA1F79F2844 /* SensorsView.swift */; };
+		40FCCC941D3148B0ABA570ED /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66E7DFA0A7486CC3EE0BD802 /* Assets.xcassets */; };
+		46D2F5E633DC8812783BEF70 /* AlertEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11FACC5077CA9396A5632AF /* AlertEngine.swift */; };
+		4AE7ABFC90071DF87BEE074E /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823AEEEE43989C48771F4B23 /* HistoryStore.swift */; };
+		4BF75D90279FBC474ABE99AE /* HistoryTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8D0C96B69AC84FE23EDB112 /* HistoryTierTests.swift */; };
+		501C1286CD1AFF6E201476FE /* ThermalModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8BDFAB37FFE2436714E993B /* ThermalModels.swift */; };
+		51AF85ECC6B2C8184E851FA1 /* MacFanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E55B7999DFEADE75E6A7F74 /* MacFanApp.swift */; };
+		53E88FA46B3DD19F9753E568 /* MetricModules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8092835921E24CF311EF4C /* MetricModules.swift */; };
+		5928A87992B038964C44C21C /* SystemUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7B0D15B0D0FFB7BF503496 /* SystemUsageView.swift */; };
+		64CF46B994ABB8BE4794DF0B /* SMCFanHardwareController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CC96D3B7B780E479341E6D /* SMCFanHardwareController.swift */; };
+		64E77C8B892BB34E699F166E /* HelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E084276ECFD655ADFCF2B7 /* HelperService.swift */; };
+		7D23A9992168B488DE004410 /* SensorStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D25682CB4A9665030FADB8F /* SensorStats.swift */; };
+		88A237F00FD0BD3BA71AD9D3 /* AdaptiveSamplingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AA1FD1D1E0BEAFC1BF8D7D1 /* AdaptiveSamplingTests.swift */; };
+		896A1EA5AB72D44050679398 /* InsightsEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521BFC6A7F51C3B134BF16AB /* InsightsEngineTests.swift */; };
+		8D5AD768EDB3E4350A14F4AB /* SmartBoost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0A8FFE33228CCBEF061381 /* SmartBoost.swift */; };
+		939CEB0ABF25C1B565599662 /* AlertEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77AF165F5CAA6541E455C2DC /* AlertEngineTests.swift */; };
+		9E25D9BB3B94C79E8245A5FC /* ControlService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A6F4FC7CD74307D3F46A152 /* ControlService.swift */; };
+		9F1E118F8E67A5F00F630EFD /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0E92A9E2F3623FD2A39A86A /* DesignSystem.swift */; };
+		A03BDB104E26D6014B92CA8C /* AppModelControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C0C0C8D56EB7DB4F5C8BA12 /* AppModelControlTests.swift */; };
+		B1B0FACEBDB27BB76DFB0953 /* AlertCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802401F7B48C07A0E90E2865 /* AlertCoordinator.swift */; };
+		BD0997868C9C33C723DC9446 /* DashboardSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB8BC2BEEB5EE00C8CD1277B /* DashboardSidebar.swift */; };
+		C168FD14DB4639EEDC0D45FE /* FanControlSafety.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0C834B16CE7F5002E5AA54 /* FanControlSafety.swift */; };
+		C350545DE6B5BFD1DC30375F /* PopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04D36D8566090B8E4898133A /* PopoverView.swift */; };
+		C445E7B7FB842EB195814260 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E07F2CB24ABCFE6A3A734BE /* AppSettings.swift */; };
+		C932B068A261ED9B52F18DB7 /* ClientAuthenticator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7A111FCC22B5F8A54AF848 /* ClientAuthenticator.swift */; };
+		CACBFD9BC510DA74BD07BC89 /* SensorStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 919FE34752F36AEE0725ABAD /* SensorStatsTests.swift */; };
+		CD9D82E13EA7FF499D459C01 /* MacFanHelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B8E4E085455C61E515BF1FC /* MacFanHelperProtocol.swift */; };
+		D10EB13E4BADBF153A4B5044 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BF4E524D8A68F24EA822FEF /* DashboardView.swift */; };
+		D8879FD7B390621F773F5B14 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E5FC686CF31AF99978263A /* AppModel.swift */; };
+		EA06A1D024A97CED96B5C7E7 /* DashboardCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C35BB5FF384FDD5F2964D5 /* DashboardCards.swift */; };
+		ED24D9E36873454716F2AB67 /* HelperMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCE46BD63DB9AC2C53E71C1C /* HelperMain.swift */; };
+		F186C1848500DAAB994B25BD /* FanControlSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0F91D6465826B5F3AE29C8 /* FanControlSafetyTests.swift */; };
+		F6224701A242710A16DC5289 /* InsightsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D987B6EC32CB85D33C92D8A7 /* InsightsEngine.swift */; };
+		F835A870276A76A5021D58CD /* MacFanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581CF813C65CF561025C98F6 /* MacFanTests.swift */; };
+		F965C59E5290D92ED5F19100 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E44AF9C562F3B1089262B794 /* SettingsView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7AE9938AA6E27A7CCA3AB326 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5654300092F2A4CEA5D148E7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CCAE8925CB6FF377AFDB988B;
+			remoteInfo = MacFan;
+		};
+		B966C35661A5967EB43AEF69 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5654300092F2A4CEA5D148E7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CCAE8925CB6FF377AFDB988B;
+			remoteInfo = MacFan;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		04D36D8566090B8E4898133A /* PopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverView.swift; sourceTree = "<group>"; };
+		1C0C0C8D56EB7DB4F5C8BA12 /* AppModelControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelControlTests.swift; sourceTree = "<group>"; };
+		1E55B7999DFEADE75E6A7F74 /* MacFanApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFanApp.swift; sourceTree = "<group>"; };
+		2C0A8FFE33228CCBEF061381 /* SmartBoost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartBoost.swift; sourceTree = "<group>"; };
+		2E07F2CB24ABCFE6A3A734BE /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		34E084276ECFD655ADFCF2B7 /* HelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperService.swift; sourceTree = "<group>"; };
+		35D8E1D5AED745CE5C1A0E64 /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
+		395D7A755165BAA1F79F2844 /* SensorsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorsView.swift; sourceTree = "<group>"; };
+		3EE4B2756212DFB2398CF78B /* MacFanUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacFanUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		516BAF359A87DA04E763A14D /* DashboardCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCharts.swift; sourceTree = "<group>"; };
+		521BFC6A7F51C3B134BF16AB /* InsightsEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsEngineTests.swift; sourceTree = "<group>"; };
+		52C35BB5FF384FDD5F2964D5 /* DashboardCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCards.swift; sourceTree = "<group>"; };
+		581CF813C65CF561025C98F6 /* MacFanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFanTests.swift; sourceTree = "<group>"; };
+		5AA1FD1D1E0BEAFC1BF8D7D1 /* AdaptiveSamplingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveSamplingTests.swift; sourceTree = "<group>"; };
+		5BF4E524D8A68F24EA822FEF /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		6550738067A836BC7A00D46C /* SystemStatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStatsService.swift; sourceTree = "<group>"; };
+		66E7DFA0A7486CC3EE0BD802 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		68E5FC686CF31AF99978263A /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		6A6F4FC7CD74307D3F46A152 /* ControlService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlService.swift; sourceTree = "<group>"; };
+		77AF165F5CAA6541E455C2DC /* AlertEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertEngineTests.swift; sourceTree = "<group>"; };
+		7D25682CB4A9665030FADB8F /* SensorStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorStats.swift; sourceTree = "<group>"; };
+		7DA793D2D697484C8A410F6B /* MacFanHelper */ = {isa = PBXFileReference; includeInIndex = 0; path = MacFanHelper; sourceTree = BUILT_PRODUCTS_DIR; };
+		802401F7B48C07A0E90E2865 /* AlertCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCoordinator.swift; sourceTree = "<group>"; };
+		823AEEEE43989C48771F4B23 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
+		839D2C6124C3B4A0AFC8D556 /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
+		8A8092835921E24CF311EF4C /* MetricModules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricModules.swift; sourceTree = "<group>"; };
+		919FE34752F36AEE0725ABAD /* SensorStatsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorStatsTests.swift; sourceTree = "<group>"; };
+		9B8E4E085455C61E515BF1FC /* MacFanHelperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFanHelperProtocol.swift; sourceTree = "<group>"; };
+		A0BFBCCADB945C80E52026D1 /* AppSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsTests.swift; sourceTree = "<group>"; };
+		A11FACC5077CA9396A5632AF /* AlertEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertEngine.swift; sourceTree = "<group>"; };
+		A3CC96D3B7B780E479341E6D /* SMCFanHardwareController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMCFanHardwareController.swift; sourceTree = "<group>"; };
+		AB0C834B16CE7F5002E5AA54 /* FanControlSafety.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanControlSafety.swift; sourceTree = "<group>"; };
+		AC7A111FCC22B5F8A54AF848 /* ClientAuthenticator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientAuthenticator.swift; sourceTree = "<group>"; };
+		BB8BC2BEEB5EE00C8CD1277B /* DashboardSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSidebar.swift; sourceTree = "<group>"; };
+		C0E92A9E2F3623FD2A39A86A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		CD0F91D6465826B5F3AE29C8 /* FanControlSafetyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanControlSafetyTests.swift; sourceTree = "<group>"; };
+		D8D0C96B69AC84FE23EDB112 /* HistoryTierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryTierTests.swift; sourceTree = "<group>"; };
+		D987B6EC32CB85D33C92D8A7 /* InsightsEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsEngine.swift; sourceTree = "<group>"; };
+		DF7B0D15B0D0FFB7BF503496 /* SystemUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemUsageView.swift; sourceTree = "<group>"; };
+		DF98C95B9741B2A921394C81 /* SMCReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMCReader.swift; sourceTree = "<group>"; };
+		E0FF5B4F50A19ADC4D81816B /* MacFan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacFan.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E44AF9C562F3B1089262B794 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E74C01F32370E826CF098C88 /* MacFanTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacFanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E8BDFAB37FFE2436714E993B /* ThermalModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalModels.swift; sourceTree = "<group>"; };
+		EABF405C37E5EBBF7E4AA319 /* HistoryGaps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryGaps.swift; sourceTree = "<group>"; };
+		F5BE924E18340DA0CB525D54 /* MacFanUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFanUITests.swift; sourceTree = "<group>"; };
+		FCE46BD63DB9AC2C53E71C1C /* HelperMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperMain.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0879D350BB11F72381C5CC4E /* MacFanHelper */ = {
+			isa = PBXGroup;
+			children = (
+				AC7A111FCC22B5F8A54AF848 /* ClientAuthenticator.swift */,
+				FCE46BD63DB9AC2C53E71C1C /* HelperMain.swift */,
+				34E084276ECFD655ADFCF2B7 /* HelperService.swift */,
+				A3CC96D3B7B780E479341E6D /* SMCFanHardwareController.swift */,
+			);
+			path = MacFanHelper;
+			sourceTree = "<group>";
+		};
+		1485A827239AC768CFEE5759 /* MacFanTests */ = {
+			isa = PBXGroup;
+			children = (
+				5AA1FD1D1E0BEAFC1BF8D7D1 /* AdaptiveSamplingTests.swift */,
+				77AF165F5CAA6541E455C2DC /* AlertEngineTests.swift */,
+				1C0C0C8D56EB7DB4F5C8BA12 /* AppModelControlTests.swift */,
+				A0BFBCCADB945C80E52026D1 /* AppSettingsTests.swift */,
+				CD0F91D6465826B5F3AE29C8 /* FanControlSafetyTests.swift */,
+				D8D0C96B69AC84FE23EDB112 /* HistoryTierTests.swift */,
+				521BFC6A7F51C3B134BF16AB /* InsightsEngineTests.swift */,
+				581CF813C65CF561025C98F6 /* MacFanTests.swift */,
+				919FE34752F36AEE0725ABAD /* SensorStatsTests.swift */,
+			);
+			path = MacFanTests;
+			sourceTree = "<group>";
+		};
+		1E3020667D0A213874533F59 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				AB0C834B16CE7F5002E5AA54 /* FanControlSafety.swift */,
+				9B8E4E085455C61E515BF1FC /* MacFanHelperProtocol.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		3954818961E33F910F104A0B /* App */ = {
+			isa = PBXGroup;
+			children = (
+				802401F7B48C07A0E90E2865 /* AlertCoordinator.swift */,
+				68E5FC686CF31AF99978263A /* AppModel.swift */,
+				2E07F2CB24ABCFE6A3A734BE /* AppSettings.swift */,
+				1E55B7999DFEADE75E6A7F74 /* MacFanApp.swift */,
+				839D2C6124C3B4A0AFC8D556 /* StatusItemController.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		4046EE3D7530AFBC74B790CB /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				66E7DFA0A7486CC3EE0BD802 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		4680604957C5D0EE60F9E025 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E0FF5B4F50A19ADC4D81816B /* MacFan.app */,
+				7DA793D2D697484C8A410F6B /* MacFanHelper */,
+				E74C01F32370E826CF098C88 /* MacFanTests.xctest */,
+				3EE4B2756212DFB2398CF78B /* MacFanUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4F9E9F9411312666BAF07796 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				A11FACC5077CA9396A5632AF /* AlertEngine.swift */,
+				EABF405C37E5EBBF7E4AA319 /* HistoryGaps.swift */,
+				D987B6EC32CB85D33C92D8A7 /* InsightsEngine.swift */,
+				7D25682CB4A9665030FADB8F /* SensorStats.swift */,
+				2C0A8FFE33228CCBEF061381 /* SmartBoost.swift */,
+				E8BDFAB37FFE2436714E993B /* ThermalModels.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		62E088E18CAFE03A2DB18E4E /* MacFan */ = {
+			isa = PBXGroup;
+			children = (
+				3954818961E33F910F104A0B /* App */,
+				4F9E9F9411312666BAF07796 /* Domain */,
+				4046EE3D7530AFBC74B790CB /* Resources */,
+				C3026B771457F0A7AEF1E8FC /* Services */,
+				1E3020667D0A213874533F59 /* Shared */,
+				D553EE08623FA0A59D2AB599 /* UI */,
+			);
+			path = MacFan;
+			sourceTree = "<group>";
+		};
+		C3026B771457F0A7AEF1E8FC /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				6A6F4FC7CD74307D3F46A152 /* ControlService.swift */,
+				823AEEEE43989C48771F4B23 /* HistoryStore.swift */,
+				DF98C95B9741B2A921394C81 /* SMCReader.swift */,
+				6550738067A836BC7A00D46C /* SystemStatsService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		C7322574409BF2983DEBFFDF = {
+			isa = PBXGroup;
+			children = (
+				62E088E18CAFE03A2DB18E4E /* MacFan */,
+				0879D350BB11F72381C5CC4E /* MacFanHelper */,
+				1485A827239AC768CFEE5759 /* MacFanTests */,
+				DF702A321B2523CFBC2F7605 /* MacFanUITests */,
+				4680604957C5D0EE60F9E025 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D553EE08623FA0A59D2AB599 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				52C35BB5FF384FDD5F2964D5 /* DashboardCards.swift */,
+				516BAF359A87DA04E763A14D /* DashboardCharts.swift */,
+				BB8BC2BEEB5EE00C8CD1277B /* DashboardSidebar.swift */,
+				5BF4E524D8A68F24EA822FEF /* DashboardView.swift */,
+				C0E92A9E2F3623FD2A39A86A /* DesignSystem.swift */,
+				35D8E1D5AED745CE5C1A0E64 /* InsightsView.swift */,
+				8A8092835921E24CF311EF4C /* MetricModules.swift */,
+				04D36D8566090B8E4898133A /* PopoverView.swift */,
+				395D7A755165BAA1F79F2844 /* SensorsView.swift */,
+				E44AF9C562F3B1089262B794 /* SettingsView.swift */,
+				DF7B0D15B0D0FFB7BF503496 /* SystemUsageView.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		DF702A321B2523CFBC2F7605 /* MacFanUITests */ = {
+			isa = PBXGroup;
+			children = (
+				F5BE924E18340DA0CB525D54 /* MacFanUITests.swift */,
+			);
+			path = MacFanUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		170C8B6E3E5449B02CBF510B /* MacFanHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3486640F2B33B252E8D8E1D6 /* Build configuration list for PBXNativeTarget "MacFanHelper" */;
+			buildPhases = (
+				C9790FA7D7806260FC8CA260 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MacFanHelper;
+			packageProductDependencies = (
+			);
+			productName = MacFanHelper;
+			productReference = 7DA793D2D697484C8A410F6B /* MacFanHelper */;
+			productType = "com.apple.product-type.tool";
+		};
+		465C9F77F9EE54282483DAFD /* MacFanTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 34AC4D88416AD6FE6246CD17 /* Build configuration list for PBXNativeTarget "MacFanTests" */;
+			buildPhases = (
+				3B6D83096C50AFF1CCD7FA13 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BC49CC32B6272F9CD9E96753 /* PBXTargetDependency */,
+			);
+			name = MacFanTests;
+			packageProductDependencies = (
+			);
+			productName = MacFanTests;
+			productReference = E74C01F32370E826CF098C88 /* MacFanTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B5C45280EEBAD4734CFE7B31 /* MacFanUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 15655582D2780D81E6BFFA90 /* Build configuration list for PBXNativeTarget "MacFanUITests" */;
+			buildPhases = (
+				ACE9B2F5786C1E57F2309283 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DCAE496C9AF19753FEBD9C6E /* PBXTargetDependency */,
+			);
+			name = MacFanUITests;
+			packageProductDependencies = (
+			);
+			productName = MacFanUITests;
+			productReference = 3EE4B2756212DFB2398CF78B /* MacFanUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		CCAE8925CB6FF377AFDB988B /* MacFan */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB895E1DC5FC0F7AC4C01B81 /* Build configuration list for PBXNativeTarget "MacFan" */;
+			buildPhases = (
+				69E3BC5D1211A89EE9FDD233 /* Sources */,
+				0486BAB60BDF00C0457C234C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MacFan;
+			packageProductDependencies = (
+			);
+			productName = MacFan;
+			productReference = E0FF5B4F50A19ADC4D81816B /* MacFan.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5654300092F2A4CEA5D148E7 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					170C8B6E3E5449B02CBF510B = {
+						ProvisioningStyle = Automatic;
+					};
+					465C9F77F9EE54282483DAFD = {
+						ProvisioningStyle = Automatic;
+					};
+					B5C45280EEBAD4734CFE7B31 = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = CCAE8925CB6FF377AFDB988B;
+					};
+					CCAE8925CB6FF377AFDB988B = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = ED6DA94AB7896C5A232CDA2B /* Build configuration list for PBXProject "MacFan" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C7322574409BF2983DEBFFDF;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CCAE8925CB6FF377AFDB988B /* MacFan */,
+				170C8B6E3E5449B02CBF510B /* MacFanHelper */,
+				465C9F77F9EE54282483DAFD /* MacFanTests */,
+				B5C45280EEBAD4734CFE7B31 /* MacFanUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0486BAB60BDF00C0457C234C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				40FCCC941D3148B0ABA570ED /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3B6D83096C50AFF1CCD7FA13 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				88A237F00FD0BD3BA71AD9D3 /* AdaptiveSamplingTests.swift in Sources */,
+				939CEB0ABF25C1B565599662 /* AlertEngineTests.swift in Sources */,
+				A03BDB104E26D6014B92CA8C /* AppModelControlTests.swift in Sources */,
+				207F06F0750687091BF318BF /* AppSettingsTests.swift in Sources */,
+				F186C1848500DAAB994B25BD /* FanControlSafetyTests.swift in Sources */,
+				4BF75D90279FBC474ABE99AE /* HistoryTierTests.swift in Sources */,
+				896A1EA5AB72D44050679398 /* InsightsEngineTests.swift in Sources */,
+				F835A870276A76A5021D58CD /* MacFanTests.swift in Sources */,
+				CACBFD9BC510DA74BD07BC89 /* SensorStatsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		69E3BC5D1211A89EE9FDD233 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1B0FACEBDB27BB76DFB0953 /* AlertCoordinator.swift in Sources */,
+				46D2F5E633DC8812783BEF70 /* AlertEngine.swift in Sources */,
+				D8879FD7B390621F773F5B14 /* AppModel.swift in Sources */,
+				C445E7B7FB842EB195814260 /* AppSettings.swift in Sources */,
+				9E25D9BB3B94C79E8245A5FC /* ControlService.swift in Sources */,
+				EA06A1D024A97CED96B5C7E7 /* DashboardCards.swift in Sources */,
+				2ABD8B93BD8002ED2B8592E3 /* DashboardCharts.swift in Sources */,
+				BD0997868C9C33C723DC9446 /* DashboardSidebar.swift in Sources */,
+				D10EB13E4BADBF153A4B5044 /* DashboardView.swift in Sources */,
+				9F1E118F8E67A5F00F630EFD /* DesignSystem.swift in Sources */,
+				C168FD14DB4639EEDC0D45FE /* FanControlSafety.swift in Sources */,
+				24B069C4E8D6716B804D5070 /* HistoryGaps.swift in Sources */,
+				4AE7ABFC90071DF87BEE074E /* HistoryStore.swift in Sources */,
+				F6224701A242710A16DC5289 /* InsightsEngine.swift in Sources */,
+				3682B25EEE43773BB38B014E /* InsightsView.swift in Sources */,
+				51AF85ECC6B2C8184E851FA1 /* MacFanApp.swift in Sources */,
+				370393A435F529B84CCC9F1A /* MacFanHelperProtocol.swift in Sources */,
+				53E88FA46B3DD19F9753E568 /* MetricModules.swift in Sources */,
+				C350545DE6B5BFD1DC30375F /* PopoverView.swift in Sources */,
+				3923817143C2BE8EDFE6EF98 /* SMCReader.swift in Sources */,
+				7D23A9992168B488DE004410 /* SensorStats.swift in Sources */,
+				3CE0DF068C9981613971D9BE /* SensorsView.swift in Sources */,
+				F965C59E5290D92ED5F19100 /* SettingsView.swift in Sources */,
+				8D5AD768EDB3E4350A14F4AB /* SmartBoost.swift in Sources */,
+				319C090896BDAA50AD36764E /* StatusItemController.swift in Sources */,
+				1002C43C4CD22A5B43B30931 /* SystemStatsService.swift in Sources */,
+				5928A87992B038964C44C21C /* SystemUsageView.swift in Sources */,
+				501C1286CD1AFF6E201476FE /* ThermalModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ACE9B2F5786C1E57F2309283 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				016F566ADD4C000D08F4715C /* MacFanUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C9790FA7D7806260FC8CA260 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C932B068A261ED9B52F18DB7 /* ClientAuthenticator.swift in Sources */,
+				332C16C5D33FB3DF8A68EBFD /* FanControlSafety.swift in Sources */,
+				ED24D9E36873454716F2AB67 /* HelperMain.swift in Sources */,
+				64E77C8B892BB34E699F166E /* HelperService.swift in Sources */,
+				CD9D82E13EA7FF499D459C01 /* MacFanHelperProtocol.swift in Sources */,
+				64CF46B994ABB8BE4794DF0B /* SMCFanHardwareController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BC49CC32B6272F9CD9E96753 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CCAE8925CB6FF377AFDB988B /* MacFan */;
+			targetProxy = 7AE9938AA6E27A7CCA3AB326 /* PBXContainerItemProxy */;
+		};
+		DCAE496C9AF19753FEBD9C6E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CCAE8925CB6FF377AFDB988B /* MacFan */;
+			targetProxy = B966C35661A5967EB43AEF69 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		044B361E9B50C7DEEC113A21 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = local.macfan.helper;
+				PRODUCT_MODULE_NAME = MacFanHelper;
+				PRODUCT_NAME = MacFanHelper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		292A9FDE2C504A780B701055 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = local.macfan.helper;
+				PRODUCT_MODULE_NAME = MacFanHelper;
+				PRODUCT_NAME = MacFanHelper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		318260C5C4FD69E9D4A75641 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = MacFan;
+			};
+			name = Release;
+		};
+		365D098A823C4F3C7CDD1120 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacFan.app/Contents/MacOS/MacFan";
+			};
+			name = Release;
+		};
+		3B279D6C2B16A5577D65B775 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		641B451979523F5EB2AB83A8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MacFan/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = (
+					"-lsqlite3",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = local.macfan;
+				PRODUCT_MODULE_NAME = MacFan;
+				PRODUCT_NAME = MacFan;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		8C7870CD83CC82599DAF0ACC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MacFan/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = (
+					"-lsqlite3",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = local.macfan;
+				PRODUCT_MODULE_NAME = MacFan;
+				PRODUCT_NAME = MacFan;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		B570FCB5CF85CE596EA9440F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacFan.app/Contents/MacOS/MacFan";
+			};
+			name = Debug;
+		};
+		F9957639D51D11A08CCDFF63 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_CODE_COVERAGE = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_GENERATE_TEST_COVERAGE_FILES = NO;
+				GCC_INSTRUMENT_PROGRAM_FLOW_ARCS = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		F9F3488897958D739E57CF54 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = MacFan;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		15655582D2780D81E6BFFA90 /* Build configuration list for PBXNativeTarget "MacFanUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F9F3488897958D739E57CF54 /* Debug */,
+				318260C5C4FD69E9D4A75641 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3486640F2B33B252E8D8E1D6 /* Build configuration list for PBXNativeTarget "MacFanHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				292A9FDE2C504A780B701055 /* Debug */,
+				044B361E9B50C7DEEC113A21 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		34AC4D88416AD6FE6246CD17 /* Build configuration list for PBXNativeTarget "MacFanTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B570FCB5CF85CE596EA9440F /* Debug */,
+				365D098A823C4F3C7CDD1120 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CB895E1DC5FC0F7AC4C01B81 /* Build configuration list for PBXNativeTarget "MacFan" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				641B451979523F5EB2AB83A8 /* Debug */,
+				8C7870CD83CC82599DAF0ACC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		ED6DA94AB7896C5A232CDA2B /* Build configuration list for PBXProject "MacFan" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3B279D6C2B16A5577D65B775 /* Debug */,
+				F9957639D51D11A08CCDFF63 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5654300092F2A4CEA5D148E7 /* Project object */;
+}
