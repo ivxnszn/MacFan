@@ -33,9 +33,6 @@ struct LiveModuleDetailPage: View, Equatable {
         case .processorTemp:
             guard let c = snapshot.displayTemperature?.celsius else { return "—" }
             return "\(Int(temperatureUnit.convert(c).rounded()))"
-        case .battery:
-            guard let p = usage?.batteryPercent else { return "—" }
-            return "\(Int(p.rounded()))"
         case .network:
             let d = usage?.networkReceivedKBps ?? 0
             let u = usage?.networkSentKBps ?? 0
@@ -51,7 +48,6 @@ struct LiveModuleDetailPage: View, Equatable {
         switch module {
         case .processorLoad, .memory, .disk: "%"
         case .processorTemp: "°"
-        case .battery: "%"
         case .network: ( (usage?.networkReceivedKBps ?? 0) + (usage?.networkSentKBps ?? 0) ) >= 1024 ? " MB/s" : " kb/s"
         }
     }
@@ -170,12 +166,6 @@ struct LiveModuleDetailPage: View, Equatable {
         case .processorLoad: usage.map { "\($0.thermalStateTitle) · \(Int($0.cpuTotalPercent))% total" } ?? "Sampling"
         case .memory: "Pressure · \(usage.map { Int($0.memoryPercent) } ?? 0)%"
         case .processorTemp: ThermalPalette.band(for: snapshot.displayTemperature?.celsius).label
-        case .battery: {
-            var s = usage?.batteryCharging == true ? "Charging" : "On battery"
-            if let w = usage?.batteryWatts { s += " · \(String(format: "%.1f", w))W" }
-            if let ma = usage?.batteryCurrentMA { s += " @ \(Int(abs(ma)))mA" }
-            return s
-        }()
         case .network: "All interfaces"
         case .disk: "Root volume"
         }
@@ -252,34 +242,6 @@ struct LiveModuleDetailPage: View, Equatable {
             if let (maxC, maxTs) = samplesWithTemp.max(by: { $0.0 < $1.0 }) {
                 let maxT = Int(temperatureUnit.convert(maxC).rounded())
                 result.append(SessionStat(label: "MAX", value: "\(maxT)°", note: "in range", timestamp: maxTs))
-            }
-        case .battery:
-            if let p = usage?.batteryPercent {
-                var note = usage?.batteryCharging == true ? "charging" : nil
-                if let w = usage?.batteryWatts, w > 0.1 {
-                    note = (note ?? "") + (note != nil ? " · " : "") + String(format: "%.1f W", w)
-                }
-                if let ma = usage?.batteryCurrentMA, let mv = usage?.batteryVoltageMV {
-                    let iv = "I×V \(Int(abs(ma)))mA @ \(String(format: "%.1f", mv/1000))V"
-                    note = (note ?? "") + (note != nil ? " · " : "") + iv
-                }
-                result.append(SessionStat(label: "LEVEL", value: "\(Int(p))%", note: note?.isEmpty == false ? note : nil, timestamp: now))
-            }
-            if let h = usage?.batteryHealthPercent {
-                result.append(SessionStat(label: "HEALTH", value: "\(Int(h.rounded()))%", note: usage?.batteryCycleCount.map { "\($0) cyc" }, timestamp: now))
-            } else if let c = usage?.batteryCycleCount {
-                result.append(SessionStat(label: "CYCLES", value: "\(c)", note: nil, timestamp: now))
-            }
-            if let sensor = snapshot.sensors.first(where: { $0.name.localizedCaseInsensitiveContains("battery") }) {
-                result.append(SessionStat(label: "BATTERY °", value: temperatureUnit.degreesWithUnit(sensor.celsius), note: nil, timestamp: now))
-            } else if let bt = usage?.batteryTempC, bt > -40 {
-                result.append(SessionStat(label: "BATTERY °", value: temperatureUnit.degreesWithUnit(bt), note: nil, timestamp: now))
-            }
-            if let aw = usage?.batteryAdapterWatts, aw > 1 {
-                result.append(SessionStat(label: "ADAPTER", value: "\(Int(aw))W", note: "external", timestamp: now))
-            }
-            if let ma = usage?.batteryCurrentMA, abs(ma) > 5 {
-                result.append(SessionStat(label: "CURRENT", value: "\(Int(ma)) mA", note: usage?.batteryCharging == true ? "in" : "out", timestamp: now))
             }
         case .network:
             let total = ((usage?.networkReceivedKBps ?? 0) + (usage?.networkSentKBps ?? 0))
@@ -381,10 +343,6 @@ struct LiveModuleDetailPage: View, Equatable {
                 case .memory:
                     let swap = usage?.swapUsedBytes ?? 0
                     Text(swap > 0 ? "Swap activity present — can correlate with sustained high temperature under memory pressure." : "No swap pressure observed in current sample.")
-                        .macFanCallout()
-                        .foregroundStyle(Color.macFanSecondary)
-                case .battery:
-                    Text("Battery temperature (if reported) contributes to overall thermal picture on portables. High system load while discharging accelerates drain.")
                         .macFanCallout()
                         .foregroundStyle(Color.macFanSecondary)
                 case .network:

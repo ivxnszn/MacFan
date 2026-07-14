@@ -5,7 +5,6 @@ enum SensorModule: String, CaseIterable, Identifiable {
     case processorLoad = "processor"
     case memory
     case processorTemp = "temperature"
-    case battery
     case network
     case disk
 
@@ -16,7 +15,6 @@ enum SensorModule: String, CaseIterable, Identifiable {
         case .processorLoad: "Processor Load"
         case .memory: "Memory"
         case .processorTemp: "Processor Temperature"
-        case .battery: "Battery"
         case .network: "Network Activity"
         case .disk: "Disk"
         }
@@ -27,7 +25,6 @@ enum SensorModule: String, CaseIterable, Identifiable {
         case .processorLoad: "cpu"
         case .memory: "memorychip"
         case .processorTemp: "thermometer.medium"
-        case .battery: "battery.75percent"
         case .network: "network"
         case .disk: "internaldrive"
         }
@@ -83,7 +80,6 @@ struct OverviewModules: View {
                 processorModule
                 memoryModule
                 temperatureModule
-                batteryModule
                 networkModule
                 diskModule
             }
@@ -171,39 +167,6 @@ struct OverviewModules: View {
                 }
             },
             action: onSelectAction(for: .processorTemp)
-        )
-    }
-
-    private var batteryModule: some View {
-        let percent = usage?.batteryPercent
-        let charging = usage?.batteryCharging == true
-        let watts = usage?.batteryWatts
-        var sub = "No internal battery"
-        if percent != nil {
-            var pieces: [String] = [charging ? "Charging" : "On battery"]
-            if charging, let w = watts, w > 0.1 { pieces.append(String(format: "+%.1f W", w)) }
-            else if let w = watts, w > 0.1 { pieces.append(String(format: "%.1f W", w)) }
-            if let minutes = usage?.batteryMinutesRemaining {
-                pieces.append("\(minutes / 60)h \(minutes % 60)m")
-            }
-            sub = pieces.joined(separator: " · ")
-        }
-        let batterySensor = model.snapshot.sensors.first { $0.name.localizedCaseInsensitiveContains("battery") }
-        let badgeText = batterySensor.map { settings.temperatureUnit.degreesWithUnit($0.celsius) }
-            ?? (percent != nil ? (watts.map { _ in "Internal + power (I×V)" } ?? "Internal battery") : "Desktop Mac")
-        return MetricModuleCard(
-            icon: "battery.75percent",
-            iconTint: .macFanSecondary,
-            label: "Battery",
-            value: percent.map { "\(Int($0.rounded()))" } ?? "—",
-            unit: percent != nil ? "%" : "",
-            sub: sub,
-            badge: badgeText,
-            badgeTone: .purple,
-            visualization: {
-                SegmentedDial(fraction: (percent ?? 0) / 100, tint: .macFanVioletLight)
-            },
-            action: onSelectAction(for: .battery)
         )
     }
 
