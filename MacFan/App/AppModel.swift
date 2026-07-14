@@ -12,6 +12,9 @@ enum VisibleSurface: Hashable, Sendable {
 final class AppModel: ObservableObject {
     @Published private(set) var snapshot: ThermalSnapshot = .unavailable
     @Published private(set) var capability: ControlCapability = .monitoring
+
+    /// Convenience for UI. True whenever control modes are unavailable (monitoring-only).
+    var isMonitoringOnly: Bool { capability.isMonitoringOnly }
     @Published private(set) var activeMode: FanMode = .system
     @Published private(set) var history: [TelemetrySample] = []
     @Published private(set) var thermalTrail: [TelemetrySample] = []
@@ -149,7 +152,12 @@ final class AppModel: ObservableObject {
         self.coolBurstDuration = coolBurstDuration.isFinite && coolBurstDuration >= 0
             ? coolBurstDuration
             : 10 * 60
-        if !usesTestFixture {
+        // Only the production live-telemetry model may read the user's
+        // persisted comfort preference. Dependency-injected models (including
+        // tests and previews) must start from a neutral state; otherwise a
+        // real preference can silently arm Smart Boost in a fixture and make
+        // manual fan-control tests appear nondeterministic.
+        if usesLiveTelemetry {
             keepCoolAtLaunch = UserDefaults.standard.bool(forKey: Self.keepCoolDefaultsKey)
         }
     }
@@ -324,10 +332,11 @@ final class AppModel: ObservableObject {
             presentToast("Unlock Expert controls in the dashboard first")
             return
         }
-        guard mode == .system || capability.canControl else {
-            presentToast(capability.detail)
-            return
-        }
+        // Intentionally do not guard on capability.canControl here for Max/Smart:
+        // capabilityLocked() inside apply() will transparently attempt preflight
+        // (subject to 30s throttle) and proceed if it succeeds. This fixes cases
+        // where the last published capability is stale firmwareLimited but control
+        // can now be obtained. Unavailable results still fail-safe with a toast.
         if mode == .system {
             queueSystemRestore(silent: false, forceHardware: false)
             return
@@ -357,6 +366,9 @@ final class AppModel: ObservableObject {
             case .accepted(let confirmedTargets):
                 activeMode = mode
                 verifiedMacFanTargets = confirmedTargets
+                // Immediately advertise ready control so UI and later polls do not
+                // see a stale firmwareLimited and auto-restore (handing fans back to macOS).
+                if capability != .ready { capability = .ready }
                 if mode == .smartBoost {
                     smartBoost = SmartBoostEngine(policy: smartBoostPolicy)
                     smartBoostStatus = .armed
@@ -486,17 +498,16 @@ final class AppModel: ObservableObject {
             } else if context.hadVerifiedControl {
                 presentToast("Auto requested — the helper watchdog is confirming release")
             } else {
-                presentToast("MacFan is monitoring — firmware or another controller owns the fans")
+                presentToast("Monitoring only — \(capability.whyMessage)")
             }
         }
     }
 
     func startCoolBurst() {
         guard pendingMode == nil else { return }
-        guard capability.canControl else {
-            presentToast(capability.detail)
-            return
-        }
+        // Do not early-guard on canControl; the apply(.max) path (and its
+        // capabilityLocked) can trigger preflight + Max for reliable full-blast
+        // even if the last capability poll showed firmwareLimited.
         invalidateControlWork(cancelModeRequest: true)
         controlRequestGeneration &+= 1
         let generation = controlRequestGeneration
@@ -519,6 +530,7 @@ final class AppModel: ObservableObject {
                 activeMode = .max
                 smartBoostStatus = .inactive
                 verifiedMacFanTargets = confirmedTargets
+                if capability != .ready { capability = .ready }
                 let deadline = Date.now.addingTimeInterval(coolBurstDuration)
                 coolBurstUntil = deadline
                 scheduleCoolBurstExpiry(at: deadline, expectedGeneration: generation)
@@ -595,6 +607,12 @@ final class AppModel: ObservableObject {
     func reloadHistory() async {
         requestDashboardHistoryReload(force: true, allowHidden: true)
         await dashboardHistoryReloadTask?.value
+    }
+
+    /// Public hook for Settings / status UI to force an immediate capability
+    /// probe (bypasses the normal throttle). Efficient: only one task at a time.
+    func forceCapabilityRefresh() {
+        scheduleCapabilityRefreshIfNeeded(force: true)
     }
 
     /// A fixed 24-hour window for the Insights engine, independent of the
@@ -723,7 +741,10 @@ final class AppModel: ObservableObject {
             // Re-arm "keep cool" once control is confirmed available.
             maybeArmComfortCoolingAfterLaunch()
 
-            if !nextCapability.canControl, hadOrPendingOverride {
+            if !nextCapability.canControl, hadOrPendingOverride, pendingMode == nil {
+                // Only force restore from poll when no control request is currently in flight.
+                // This prevents polls from aborting an in-progress activate (which can temporarily
+                // report !ready during preflight/acquire), so mode selection sticks.
                 let context = beginSystemRestore(
                     silent: true,
                     forceHardware: true,
@@ -887,6 +908,7 @@ final class AppModel: ObservableObject {
             case .accepted(let confirmedTargets):
                 smartBoostStatus = .boosting
                 verifiedMacFanTargets = confirmedTargets
+                if capability != .ready { capability = .ready }
                 presentToast("Smart Boost engaged Max")
             case .unavailable(let nextCapability, let message):
                 await failSafeAfterControlFailure(

@@ -20,7 +20,10 @@ final class DashboardWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         window.title = "MacFan — Thermal History"
-        window.minSize = NSSize(width: 940, height: 640)
+        // Preserve enough room for the denser control rail and the analytical
+        // canvas. Below this width both surfaces begin competing for text and
+        // chart space, which makes the app feel like a miniature utility.
+        window.minSize = NSSize(width: 1_100, height: 680)
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.center()
@@ -29,13 +32,11 @@ final class DashboardWindowController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        // The SwiftUI hierarchy only exists while the window is on screen.
-        // A permanently hosted DashboardView would re-render both charts on
-        // every telemetry tick even with the window closed.
-        if !isContentAttached {
-            window.contentView = NSHostingView(rootView: DashboardView().environmentObject(model).environmentObject(settings))
-            isContentAttached = true
-        }
+        // Always re-attach the SwiftUI view on show() to ensure the latest code
+        // and state (including new Overview features) are used. This prevents
+        // stale/black content from previous launches or debug builds.
+        window.contentView = NSHostingView(rootView: DashboardView().environmentObject(model).environmentObject(settings))
+        isContentAttached = true
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         model.surfaceDidShow(.dashboard)
@@ -87,6 +88,7 @@ struct DashboardView: View {
     @State private var selectedSample: TelemetrySample? = nil
     @State private var selectedDetail: DashboardDetail? = nil
     @State private var selectedInsight: Insight? = nil
+    @State private var selectedLiveModule: SensorModule? = nil
     @StateObject private var systemSession = SystemUsageViewModel()
 
     var body: some View {
@@ -99,7 +101,11 @@ struct DashboardView: View {
                         showExpertConfirmation: $showExpertConfirmation,
                         showClearHistoryConfirmation: $showClearHistoryConfirmation
                     )
-                    .frame(width: 276)
+                    // The sidebar carries status, quick actions, four modes,
+                    // fan telemetry and manual tuning. 276pt was too narrow
+                    // for that information density; 328pt keeps it compact
+                    // while restoring comfortable Apple-style text measure.
+                    .frame(width: 328)
                     .background(Color.macFanSurface.opacity(0.94))
                     .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
                     Divider().overlay(Color.white.opacity(0.05))
@@ -111,9 +117,12 @@ struct DashboardView: View {
                     Divider().overlay(Color.white.opacity(0.05))
                     mainCanvas
                 }
-                .background(Color.macFanCanvas.opacity(0.18))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color.macFanCanvas)  // solid to ensure content area is visible and not pure black if children are small
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
         // Mode changes made from the sidebar deserve the same confirmation the
         // popover gives: a quiet capsule that floats up from the bottom.
@@ -135,6 +144,7 @@ struct DashboardView: View {
         .onChange(of: selectedTab) { _, _ in
             selectedDetail = nil
             selectedInsight = nil
+            selectedLiveModule = nil
         }
         .inspector(isPresented: Binding(
             get: { selectedDetail != nil },
@@ -199,7 +209,10 @@ struct DashboardView: View {
             .padding(.horizontal, MacFanMetrics.spacingL)
             .padding(.top, MacFanMetrics.spacing)
             .padding(.bottom, 28)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // .drawingGroup removed temporarily to diagnose black screen; can be re-added for perf once stable.
     }
 
     @ViewBuilder
@@ -208,23 +221,59 @@ struct DashboardView: View {
         case .overview:
             // GLANCE ZONE — always visible, read top to bottom:
             // health headline → live power → what changed → heat over time.
-            OverviewStatRow(
-                history: model.history,
-                displayTemperature: model.snapshot.displayTemperature,
-                fans: model.snapshot.fans,
-                mode: model.activeMode,
-                rangeTitle: model.selectedRange.title,
-                temperatureUnit: settings.temperatureUnit,
-                thresholdCelsius: model.smartBoostPolicy.triggerCelsius,
-                onSelect: revealDetail
+            // NEW: Premium context strip for "hack the data" — specs + health + sensors count at a glance.
+            OverviewContextStrip(
+                snapshot: model.snapshot,
+                usage: systemSession.usage,
+                rangeTitle: model.selectedRange.title
             )
             .equatable()
+            .padding(.bottom, MacFanMetrics.spacingS)
 
-            if settings.showDashboardLiveModules {
-                OverviewModules()
+            if selectedLiveModule == nil {
+                OverviewStatRow(
+                    history: model.history,
+                    displayTemperature: model.snapshot.displayTemperature,
+                    fans: model.snapshot.fans,
+                    mode: model.activeMode,
+                    rangeTitle: model.selectedRange.title,
+                    temperatureUnit: settings.temperatureUnit,
+                    thresholdCelsius: model.smartBoostPolicy.triggerCelsius,
+                    onSelect: revealDetail
+                )
+                .equatable()
             }
 
-            if settings.showDashboardInlineInsights {
+            if settings.showDashboardLiveModules {
+                if let module = selectedLiveModule {
+                    // Dedicated page feel: stronger visual container + hide competing glance elements while open
+                    VStack(alignment: .leading, spacing: MacFanMetrics.spacing) {
+                        LiveModuleDetailPage(
+                            module: module,
+                            snapshot: model.snapshot,
+                            history: model.history,
+                            usage: systemSession.usage,
+                            temperatureUnit: settings.temperatureUnit,
+                            onClose: { selectedLiveModule = nil },
+                            onRevealSample: { sample in
+                                selectedSample = sample
+                                selectedLiveModule = nil
+                            }
+                        )
+                    }
+                    .padding(12)
+                    .background(Color.macFanSurface.opacity(0.6), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusL, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: MacFanMetrics.radiusL).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                } else {
+                    OverviewModules(onSelectModule: { module in
+                        selectedLiveModule = module
+                        MacFanHaptics.tick()
+                    })
+                }
+            }
+
+            if settings.showDashboardInlineInsights && selectedLiveModule == nil {
                 InlineOverviewInsights(
                     history: model.history,
                     thresholdCelsius: model.smartBoostPolicy.triggerCelsius,
@@ -507,7 +556,7 @@ private struct DashboardInspector: View {
                         HStack {
                             Text(fan.name).macFanHeadline().foregroundStyle(Color.macFanPrimary)
                             Spacer()
-                            Text(fan.actualRPM < 1 ? "Stopped" : "\(Int(fan.actualRPM.rounded())) RPM")
+                            Text(fan.actualRPM < 1 ? (mode == .max ? "Targeting max" : "Stopped") : "\(Int(fan.actualRPM.rounded())) RPM")
                                 .macFanNumber(14, weight: .semibold)
                                 .foregroundStyle(Color.macFanPrimary)
                         }
@@ -649,11 +698,12 @@ private struct InspectorMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).macFanSectionLabel()
-            Text(value).macFanNumber(15, weight: .semibold).foregroundStyle(tint)
+            Text(value).macFanNumber(15, weight: .semibold).foregroundStyle(tint).macFanLiveNumberTransition()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .animation(.easeOut(duration: 0.18), value: value)
     }
 }
 
@@ -671,6 +721,8 @@ private struct InspectorEvidenceRow: View {
                 .lineLimit(2)
                 .foregroundStyle(tint)
                 .multilineTextAlignment(.trailing)
+                .macFanLiveNumberTransition()
         }
+        .animation(.easeOut(duration: 0.18), value: value)
     }
 }

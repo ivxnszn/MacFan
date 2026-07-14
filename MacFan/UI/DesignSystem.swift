@@ -149,6 +149,7 @@ extension View {
     /// Hero / display numeric — large prominent temperatures, RPMs, key live values.
     /// Makes numbers "sing": tight negative tracking, monospaced digits, premium weight.
     /// Use for popover hero, big stat cards. Align units with .lastTextBaseline.
+    /// Always follow with .macFanLiveNumberTransition() + ancestor .animation(..., value:) for live updates.
     func macFanHeroNumeric(size: CGFloat = 44) -> some View {
         font(.macFanNumeric(size: size, weight: .semibold))
             .monospacedDigit()
@@ -159,6 +160,7 @@ extension View {
     /// Perfect metric number: monospaced digits + dynamic tracking for premium tabular feel.
     /// Use everywhere for live values (temps, RPMs, %, stats). Size-aware tracking creates
     /// the "Apple instrument panel" tightness on large numbers and clean readability on small.
+    /// Chain .macFanLiveNumberTransition() for smooth .contentTransition(.numericText()) on updating values.
     func macFanNumber(_ size: CGFloat, weight: Font.Weight = .semibold) -> some View {
         font(.macFanNumeric(size: size, weight: weight))
             .monospacedDigit()
@@ -178,6 +180,14 @@ extension View {
             .monospacedDigit()
             .kerning(size >= 36 ? -0.8 : -0.4)
             .lineLimit(1)
+    }
+
+    /// Applies the lightweight, 144Hz-friendly numeric digit morph for smooth live value changes.
+    /// Use on any Text showing updating temperatures, RPMs, %, loads, battery, etc.
+    /// Pair with .animation(.easeOut(duration: 0.22), value: rawValue) on an ancestor for best results.
+    /// Avoid on static or Canvas-drawn numbers.
+    func macFanLiveNumberTransition() -> some View {
+        self.contentTransition(.numericText())
     }
 
     /// Dedicated for chart axis, tick labels, legends. Crisp on dark HUDs.
@@ -492,6 +502,7 @@ struct LiveDot: View {
 
 struct FanMeter: View {
     let fan: FanReading
+    var isSelected: Bool = false
 
     private var coolingPercent: Int {
         Int((fan.normalizedActual * 100).rounded())
@@ -513,6 +524,7 @@ struct FanMeter: View {
                     Text(fan.actualRPM < 1 ? "Stopped" : fan.displayActual)
                         .macFanLabel(tracking: 0.6)
                         .foregroundStyle(Color.macFanSecondary)
+                        .macFanLiveNumberTransition()
                     if fan.actualRPM >= 1 {
                         Text("RPM")
                             .macFanCaption()
@@ -538,7 +550,8 @@ struct FanMeter: View {
             }
             .frame(height: 6)
             HStack {
-                Text(fan.actualRPM < 1 ? "Stopped by macOS" : "\(coolingPercent)% of range")
+                let targetHigh = fan.firmwareTargetRPM.map { $0 > fan.maximumRPM * 0.9 } ?? false
+                Text(fan.actualRPM < 1 ? (targetHigh ? "Target max (ramping...)" : "Stopped / ramping") : "\(coolingPercent)% of range")
                     .macFanNumber(11, weight: .medium)
                     .foregroundStyle(Color.macFanSecondary)
                 Spacer()
@@ -552,10 +565,16 @@ struct FanMeter: View {
                     .foregroundStyle(Color.macFanAmberLight)
             }
         }
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
+                    .stroke(Color.macFanAmber.opacity(0.32), lineWidth: 0.75)
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(fan.name) fan")
         .accessibilityValue(fan.actualRPM < 1
-            ? "stopped by macOS, which is normal while cool, reported maximum \(Int(fan.maximumRPM)) RPM"
+            ? "stopped or ramping (full blast requested if in Max mode), reported maximum \(Int(fan.maximumRPM)) RPM"
             : "actual \(fan.displayActual) RPM, reported maximum \(Int(fan.maximumRPM)) RPM\(fan.firmwareTargetRPM.map { ", firmware target \(Int($0.rounded())) RPM" } ?? ", firmware automatic")")
     }
 }
@@ -746,5 +765,94 @@ private enum GrainTileCache {
         var h = x
         h ^= h >> 33; h &*= 0xff51afd7ed558ccd; h ^= h >> 33; h &*= 0xc4ceb9fe1a85ec53; h ^= h >> 33
         return h
+    }
+}
+
+// MARK: - Premium recap components (for ThermalBriefCard, Overview summaries, and consistent glance UIs)
+// Reusable, scannable, use DesignSystem typography/metrics/colors. Lightweight. Actionable context.
+
+/// Compact, premium metric tile for key stats in recap headers and glance rows.
+/// Aligns with BriefMetric evolution + Statlet patterns. Icon optional for visual weight.
+/// Always monospaced digits on value. Supports sublabel for context (e.g. "of range").
+struct RecapMetric: View {
+    let label: String
+    let value: String
+    let tint: Color
+    var icon: String? = nil
+    var sublabel: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.macFanCallout)
+                        .foregroundStyle(tint.opacity(0.9))
+                }
+                Text(label)
+                    .macFanSubhead()
+                    .textCase(.uppercase)
+            }
+            Text(value)
+                .macFanNumber(20, weight: .semibold)
+                .foregroundStyle(tint)
+                .macFanLiveNumberTransition()
+            if let sublabel {
+                Text(sublabel)
+                    .macFanCallout()
+                    .foregroundStyle(Color.macFanMuted)
+            }
+        }
+        .frame(minWidth: 72, alignment: .leading)
+    }
+}
+
+/// Lightweight Canvas mini-gauge for % based glance values (e.g. cool ratio, effort, coverage).
+/// Rounded pill fill, premium subtle gradient + inner stroke. 144Hz friendly, no heavy views.
+struct MiniPercentGauge: View {
+    let fraction: Double   // 0...1
+    let tint: Color
+    let label: String?     // e.g. "COOL"
+    var height: CGFloat = 9
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let label {
+                Text(label).macFanSectionLabel()
+            }
+            Canvas { context, size in
+                let w = size.width
+                let h = size.height
+                let clamped = max(0, min(1, fraction))
+                let fillW = max(2, w * clamped)
+
+                // Background track (subtle)
+                let bg = Path(roundedRect: CGRect(x: 0, y: 0, width: w, height: h), cornerSize: CGSize(width: h/2, height: h/2))
+                context.fill(bg, with: .color(Color.white.opacity(0.06)))
+
+                // Filled portion
+                if clamped > 0.001 {
+                    let fillRect = CGRect(x: 0, y: 0, width: fillW, height: h)
+                    let fillPath = Path(roundedRect: fillRect, cornerSize: CGSize(width: h/2, height: h/2))
+                    context.fill(
+                        fillPath,
+                        with: .linearGradient(
+                            Gradient(colors: [tint.opacity(0.92), tint.opacity(0.72)]),
+                            startPoint: CGPoint(x: 0, y: 0),
+                            endPoint: CGPoint(x: 1, y: 0)
+                        )
+                    )
+                    // Delicate premium highlight
+                    if fillW > 8 {
+                        let inner = fillRect.insetBy(dx: 0.6, dy: 0.6)
+                        context.stroke(Path(roundedRect: inner, cornerSize: CGSize(width: max(1, (h-1.2)/2), height: max(1, (h-1.2)/2))), with: .color(.white.opacity(0.15)), lineWidth: 0.5)
+                    }
+                }
+                // Outer definition
+                let outline = Path(roundedRect: CGRect(x: 0, y: 0, width: w, height: h), cornerSize: CGSize(width: h/2, height: h/2))
+                context.stroke(outline, with: .color(Color.white.opacity(0.12)), lineWidth: 0.5)
+            }
+            .frame(height: height)
+        }
     }
 }

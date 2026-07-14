@@ -391,11 +391,12 @@ private struct SensorSummaryMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).macFanLabel(tracking: 0.35).foregroundStyle(Color.macFanMuted)
-            Text(value).macFanNumber(18, weight: .semibold).foregroundStyle(color)
+            Text(value).macFanNumber(18, weight: .semibold).foregroundStyle(color).macFanLiveNumberTransition()
             Text(detail).macFanChartTick().foregroundStyle(Color.macFanSecondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 13)
+        .animation(.easeOut(duration: 0.22), value: value)
     }
 }
 
@@ -441,7 +442,7 @@ private struct SensorTile: View {
                     Text("\(Int(unit.convert(sensor.celsius).rounded()))")
                         .macFanNumber(28, weight: .semibold)
                         .foregroundStyle(Color.macFanPrimary)
-                        .contentTransition(.numericText())
+                        .macFanLiveNumberTransition()
                     Text("°").macFanNumber(15, weight: .medium).foregroundStyle(Color.macFanSecondary)
                     if let delta = trail.delta, abs(delta) >= 1 {
                         Image(systemName: delta > 0 ? "arrow.up.right" : "arrow.down.right")
@@ -600,9 +601,10 @@ private struct SensorFocusCard: View {
     private func detailMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).macFanChartTick().foregroundStyle(Color.macFanMuted)
-            Text(value).macFanNumber(11.5, weight: .medium).foregroundStyle(Color.macFanPrimary)
+            Text(value).macFanNumber(11.5, weight: .medium).foregroundStyle(Color.macFanPrimary).macFanLiveNumberTransition()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeOut(duration: 0.18), value: value)
     }
 
     private func signedDegrees(_ celsiusDelta: Double) -> String {

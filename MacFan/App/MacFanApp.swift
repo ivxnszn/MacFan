@@ -51,11 +51,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         observeSleepWake()
         observeDashboardVisibility()
+        // UI fixtures must be deterministic even when a developer's normal
+        // preferences have the optional popover modules hidden.
+        if ProcessInfo.processInfo.environment["MACFAN_UI_TEST_MODE"] == "1" {
+            settings.showPopoverFanBank = true
+            settings.showPopoverTimeline = true
+        }
         if ProcessInfo.processInfo.environment["MACFAN_UI_TEST_MODE"] != "1" {
             alertCoordinator = AlertCoordinator(model: model, settings: settings)
             feedbackCoordinator = FeedbackCoordinator(model: model)
         }
         model.start()
+        // Auto-show the full dashboard on normal launch so the user can immediately see the Overview tab changes when double-clicking the app in Applications.
+        // The app remains primarily menu-bar driven (popover for quick access), but opening the app brings up the rich dashboard.
+        dashboardController?.show()
         if ProcessInfo.processInfo.environment["MACFAN_UI_TEST_MODE"] == "1" {
             if ProcessInfo.processInfo.environment["MACFAN_UI_TEST_POPOVER"] == "1" {
                 showPopoverFixture()

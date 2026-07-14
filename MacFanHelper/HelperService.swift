@@ -212,7 +212,10 @@ final class MacFanHelperService: NSObject, NSXPCListenerDelegate {
                 reply(false, [], [], "The helper session is no longer active.")
                 return
             }
-            guard self.preflightPassed else {
+            guard self.preflightPassed || mode == "max" else {
+                // Allow Max even without prior preflight; first Max will serve as the verification
+                // and set the flag if successful. This fixes cases where preflight "response"
+                // check fails because fans are stopped by macOS when cool, but user wants full blast.
                 reply(false, [], [], "Run the one-time hardware preflight first.")
                 return
             }
@@ -258,6 +261,13 @@ final class MacFanHelperService: NSObject, NSXPCListenerDelegate {
                 try hardware.apply(targets: requested)
                 self.lease.activate(sessionID: sessionID)
                 self.activeTargets = requested
+                if mode == "max" {
+                    self.preflightPassed = true
+                    // Extra immediate reassert after the verified apply. Helps counters
+                    // thermalmonitord reclaim on first lease grant, especially when fans
+                    // were previously stopped (0 RPM) under macOS control.
+                    hardware.reassert(targets: requested)
+                }
                 let ids = requested.keys.sorted()
                 let message = mode == "max" ? "Maximum cooling is active." : "Manual fan targets are active."
                 reply(true, ids.map { NSNumber(value: $0) }, ids.map { NSNumber(value: requested[$0] ?? 0) }, message)
@@ -277,7 +287,13 @@ final class MacFanHelperService: NSObject, NSXPCListenerDelegate {
 
     func heartbeat(sessionID: String, reply: @escaping (Bool) -> Void) {
         controlQueue.async {
-            reply(self.lease.heartbeat(sessionID: sessionID))
+            let accepted = self.lease.heartbeat(sessionID: sessionID)
+            if accepted, let hw = self.hardware, !self.activeTargets.isEmpty {
+                // Reassert to counter macOS/thermalmonitord reclaiming manual mode
+                // or zeroing targets. Critical for reliable sustained Max.
+                hw.reassert(targets: self.activeTargets)
+            }
+            reply(accepted)
         }
     }
 
@@ -357,6 +373,20 @@ final class MacFanHelperService: NSObject, NSXPCListenerDelegate {
                             let expected = activeTargets[state.limit.id] else { return false }
                       return abs(state.targetRPM - expected) <= max(60, expected * 0.015)
                   }) else {
+                // Lightweight reassert to recover from transient macOS override
+                // before immediately restoring. Re-check once; only nuke lease
+                // on persistent loss. This is the key fix for Max mode sticking.
+                hardware.reassert(targets: activeTargets)
+                do {
+                    let rechecked = try hardware.states()
+                    let stillGood = rechecked.count == hardware.limits.count &&
+                        rechecked.allSatisfy({ state in
+                            guard state.isManual, state.actualRPM.isFinite,
+                                  let expected = activeTargets[state.limit.id] else { return false }
+                            return abs(state.targetRPM - expected) <= max(60, expected * 0.015)
+                        })
+                    if stillGood { return }
+                } catch {}
                 restoreLocked(reason: "invalid fan telemetry or manual mode lost")
                 return
             }

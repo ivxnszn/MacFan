@@ -18,23 +18,113 @@ struct SettingsView: View {
                 }
             }
             Section("Fan control") {
-                LabeledContent("Status") { Text(model.capability.title) }
-                Text(model.capability.canControl
-                     ? "The private helper passed hardware preflight. Auto remains available at all times and quitting MacFan releases control."
-                     : "Monitoring works normally. Install or repair the private helper to enable Smart, Max, and Manual modes on this Mac.")
-                    .macFanCaption()
-                    .foregroundStyle(.secondary)
-                Button {
-                    if !ControlSetupLauncher.openInstallerInTerminal() {
-                        showMissingInstallerAlert = true
+                // Prominent, scannable status with clear state, why, meaning, and fix.
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Image(systemName: model.capability.statusIcon)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(model.capability.canControl ? Color.macFanMint : Color.macFanAmberLight)
+                            .frame(width: 24, height: 24)
+                            .background((model.capability.canControl ? Color.macFanMint : Color.macFanAmberLight).opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 6) {
+                                Text(model.capability.title)
+                                    .macFanSubhead()
+                                    .foregroundStyle(Color.macFanPrimary)
+                                if !model.capability.canControl && !model.capability.monitorLabel.isEmpty {
+                                    Text(model.capability.monitorLabel)
+                                        .macFanCaption()
+                                        .foregroundStyle(Color.macFanAmberLight)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1)
+                                        .background(Color.macFanAmberLight.opacity(0.15), in: Capsule())
+                                }
+                            }
+                            Text(model.capability.shortReason)
+                                .macFanCaption()
+                                .foregroundStyle(Color.macFanSecondary)
+                        }
+
+                        Spacer()
+
+                        if model.capability.canControl {
+                            Label("Full control", systemImage: "checkmark.circle.fill")
+                                .macFanCaption()
+                                .foregroundStyle(Color.macFanMint)
+                        } else {
+                            Text("Monitoring only")
+                                .macFanCaption()
+                                .foregroundStyle(Color.macFanAmberLight)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.macFanAmberLight.opacity(0.12), in: Capsule())
+                                .overlay(Capsule().stroke(Color.macFanAmberLight.opacity(0.3), lineWidth: 0.5))
+                        }
                     }
-                } label: {
-                    Label(
-                        model.capability.canControl ? "Repair or reinstall control…" : "Install or repair control…",
-                        systemImage: "wrench.and.screwdriver"
-                    )
+                    .help("Current control capability. Ready = you can change fan behavior. Otherwise MacFan is monitor-only.")
+
+                    // WHY
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Why")
+                            .macFanSectionLabel()
+                            .foregroundStyle(Color.macFanMuted)
+                        Text(model.capability.whyMessage.isEmpty ? "Control is fully available." : model.capability.whyMessage)
+                            .macFanCallout()
+                            .foregroundStyle(Color.macFanPrimary)
+                    }
+
+                    // WHAT IT MEANS
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("What this means")
+                            .macFanSectionLabel()
+                            .foregroundStyle(Color.macFanMuted)
+                        Text(model.capability.whatItMeans)
+                            .macFanCallout()
+                            .foregroundStyle(Color.macFanPrimary)
+                    }
+
+                    // HOW TO FIX (only when limited)
+                    if model.capability.isMonitoringOnly {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("How to enable control")
+                                .macFanSectionLabel()
+                                .foregroundStyle(Color.macFanMuted)
+                            Text(model.capability.howToFix)
+                                .macFanCallout()
+                                .foregroundStyle(Color.macFanPrimary)
+                        }
+                    } else {
+                        Text("Helper verified. Fan tweaks (Smart, Max, Expert, Cool Burst) are enabled. Safety restore on quit or loss of connection.")
+                            .macFanCallout()
+                            .foregroundStyle(Color.macFanSecondary)
+                    }
                 }
-                .help("Opens MacFan's local installer in Terminal. macOS asks for your administrator password once.")
+                .padding(.vertical, 4)
+                .help("Status explains the control state: why you are (or are not) limited to monitoring, what that restricts, and the exact fix.")
+
+                HStack(spacing: 8) {
+                    Button {
+                        model.forceCapabilityRefresh()
+                    } label: {
+                        Label("Check status now", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Immediately re-probe the helper and preflight. Use after installing the helper or removing a competing controller.")
+
+                    Button {
+                        if !ControlSetupLauncher.openInstallerInTerminal() {
+                            showMissingInstallerAlert = true
+                        }
+                    } label: {
+                        Label(model.capability.actionLabel, systemImage: "wrench.and.screwdriver")
+                            .frame(minWidth: 180)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.macFanBlue)
+                    .help("Opens Terminal with the local installer script. It builds and installs the narrow root helper that allows fan speed changes. Requires admin password once. This is required to exit monitor-only mode.")
+                }
+                .padding(.top, 6)
             }
             Section("Menu bar") {
                 Picker("Menu bar shows", selection: $settings.menuBarFormat) {

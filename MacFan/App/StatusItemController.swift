@@ -106,7 +106,7 @@ final class StatusItemController: NSObject {
         lastStatusTitle = title
         lastCapability = capability
         button.title = title
-        button.toolTip = "MacFan · \(mode.uiTitle) · \(capability.title) · Option-click for a 10-minute Cool Burst"
+        button.toolTip = "MacFan · \(mode.uiTitle) · \(capability.title) (\(capability.shortReason)) · Option-click for Cool Burst (needs control)"
         button.setAccessibilityValue("\(temperature), \(mode.uiTitle) mode, \(capability.title)")
     }
 

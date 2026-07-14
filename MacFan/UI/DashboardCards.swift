@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 enum DashboardDetail: Equatable, Identifiable {
@@ -133,7 +134,7 @@ private struct ThermalSummaryCard: View {
                         Text(temperature.map { "\(Int(unit.convert($0).rounded()))°" } ?? "—")
                             .macFanDisplayNumber(42)
                             .foregroundStyle(Color.macFanPrimary)
-                            .contentTransition(.numericText())
+                            .macFanLiveNumberTransition()
                         Text(band.label)
                             .macFanSubhead()
                             .foregroundStyle(band.color)
@@ -141,15 +142,15 @@ private struct ThermalSummaryCard: View {
                             .padding(.vertical, 4)
                             .background(band.color.opacity(0.11), in: Capsule())
                     }
-                    HStack(spacing: 8) {
-                        Text(sensorName ?? "Waiting for sensor")
+                    HStack(spacing: 6) {
+                        Text(sensorName ?? "Waiting for sensor").macFanCallout()
                         if let delta, abs(delta) >= 0.5 {
                             let displayDelta = unit == .celsius ? delta : delta * 9 / 5
-                            Text("\(displayDelta > 0 ? "+" : "")\(Int(displayDelta.rounded()))° over \(rangeTitle)")
+                            Text("\(displayDelta > 0 ? "+" : "")\(Int(displayDelta.rounded()))° vs \(rangeTitle)")
+                                .macFanChartTick()
                                 .foregroundStyle(delta > 0 ? Color.macFanAmberLight : Color.macFanSky)
                         }
                     }
-                    .macFanCallout()
                     .foregroundStyle(Color.macFanSecondary)
                 }
                 Spacer(minLength: 8)
@@ -163,7 +164,7 @@ private struct ThermalSummaryCard: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
-            .macFanCard(padding: 16, radius: 16, flatten: true)
+            .macFanCard(padding: MacFanMetrics.cardPadding, radius: MacFanMetrics.radiusL, flatten: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(MacFanPressableStyle())
@@ -205,25 +206,25 @@ private struct CoolingSummaryCard: View {
                     Text((averageRPM ?? 0) < 1 ? "Idle" : "\(Int((averageRPM ?? 0).rounded()))")
                         .macFanDisplayNumber((averageRPM ?? 0) < 1 ? 30 : 34)
                         .foregroundStyle(Color.macFanPrimary)
+                        .macFanLiveNumberTransition()
                     if (averageRPM ?? 0) >= 1 {
                         Text("RPM").macFanCallout().foregroundStyle(Color.macFanSecondary)
                     }
                 }
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.055))
-                        Capsule()
-                            .fill(LinearGradient(colors: [.macFanViolet, .macFanCyan], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: max(effort > 0 ? 3 : 0, proxy.size.width * effort))
+                .animation(.easeOut(duration: 0.22), value: averageRPM ?? 0)
+                // Mini effort gauge + purposeful key stat (recap alignment)
+                MiniPercentGauge(fraction: effort, tint: .macFanViolet, label: nil, height: 5)
+                HStack(spacing: 10) {
+                    Text(fans.isEmpty ? "Waiting for fan telemetry" : "\(Int((effort * 100).rounded()))% effort · \(fans.count) fans")
+                        .macFanBody()
+                        .foregroundStyle(Color.macFanPrimary)
+                    if let avg = averageRPM, avg > 10 {
+                        RecapMetric(label: "AVG", value: "\(Int(avg)) RPM", tint: .macFanVioletLight)
                     }
                 }
-                .frame(height: 5)
-                Text(fans.isEmpty ? "Waiting for fan telemetry" : "\(Int((effort * 100).rounded()))% of reported range · \(fans.count) fans")
-                    .macFanCallout()
-                    .foregroundStyle(Color.macFanSecondary)
             }
             .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
-            .macFanCard(padding: 16, radius: 16, flatten: true)
+            .macFanCard(padding: MacFanMetrics.cardPadding, radius: MacFanMetrics.radiusL, flatten: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(MacFanPressableStyle())
@@ -233,10 +234,9 @@ private struct CoolingSummaryCard: View {
     }
 }
 
-/// Live thermal-stress glance: how long the CPU has held above the Smart Boost
-/// threshold in the selected window. Answers "is it running hot?" without
-/// re-stating the peak (already shown on the chart header, canvas dot and
-/// inline insight). Calm mint when clear, amber when it has been hot.
+/// Live thermal-stress glance: exposure time + actionable context for the selected range.
+/// Purposeful recap enhancement: uses RecapMetric + MiniPercentGauge for visual punch,
+/// episode-aware hint when possible. Consistent with revamped ThermalBriefCard premium style.
 private struct ThermalLoadCard: View {
     let secondsAbove: TimeInterval
     let thresholdCelsius: Double
@@ -255,28 +255,43 @@ private struct ThermalLoadCard: View {
                         .macFanHeadline()
                         .foregroundStyle(Color.macFanSecondary)
                     Spacer()
-                    Text(rangeTitle).macFanCaption().foregroundStyle(Color.macFanMuted)
+                    Text(rangeTitle).macFanCallout().foregroundStyle(Color.macFanMuted)
                 }
-                Text(isHot ? InsightsEngine.durationText(secondsAbove) : "Clear")
-                    .macFanDisplayNumber(34)
-                    .foregroundStyle(tint)
-                    .contentTransition(.numericText())
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    Text(isHot ? InsightsEngine.durationText(secondsAbove) : "Clear")
+                        .macFanDisplayNumber(34)
+                        .foregroundStyle(tint)
+                        .macFanLiveNumberTransition()
+                    if isHot {
+                        RecapMetric(label: "THRESHOLD", value: unit.degreesWithUnit(thresholdCelsius), tint: .macFanAmber)
+                    }
+                }
                 Text(isHot
-                     ? "above \(unit.degreesWithUnit(thresholdCelsius)) · \(rangeTitle)"
+                     ? "above Smart threshold · \(rangeTitle)"
                      : "below Smart threshold · \(rangeTitle)")
-                    .macFanCallout()
-                    .foregroundStyle(Color.macFanSecondary)
-                Spacer(minLength: 0)
+                    .macFanBody()
+                    .foregroundStyle(Color.macFanPrimary)
+
+                // Premium MiniPercentGauge (DesignSystem) for purposeful visual recap
+                MiniPercentGauge(
+                    fraction: min(1.0, max(0, secondsAbove / 1800)),
+                    tint: tint,
+                    label: nil,
+                    height: 6
+                )
+
                 HStack {
-                    Text("See the heat curve").macFanSubhead()
+                    Text("Inspect heat curve").macFanSubhead()
                     Spacer()
-                    Image(systemName: "chevron.right").macFanCaption()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(Color.macFanVioletLight)
             }
             .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
-            .macFanCard(padding: 16, radius: 16, flatten: true)
+            .macFanCard(padding: MacFanMetrics.cardPadding, radius: MacFanMetrics.radiusL, flatten: true)
             .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.22), value: secondsAbove)
         }
         .buttonStyle(MacFanPressableStyle())
         .macFanHoverSpecial()
@@ -376,6 +391,18 @@ struct InlineOverviewInsights: View {
                 detail: "CPU stayed below the Smart threshold",
                 tint: .macFanMint
             ) { if let sample = history.last { onSelect(sample) } }
+        }
+
+        // Data-hacked correlation recap (reused from revamped brief; scannable + actionable)
+        let corr = InsightsEngine.responseCorrelationLabel(history: history, hardwareMaximumRPM: hardwareMaximumRPM)
+        let corrTint: Color = corr.severity == .warning ? .macFanCoral : (corr.severity == .notice ? .macFanAmber : .macFanSky)
+        OverviewInsightChip(
+            icon: "link",
+            title: corr.label,
+            detail: corr.detail,
+            tint: corrTint
+        ) {
+            if let s = history.last { onSelect(s) }
         }
     }
 }
@@ -594,4 +621,115 @@ private func recordedHistoryDurations<Key: Hashable>(
         result[bucket, default: 0] += inferred
     }
     return result
+}
+
+// MARK: - New premium context strip for Overview (specs + health + sensor count)
+// Beautifully arranged hardware identity + health. Uses friendly Mac name (no raw model IDs like "Mac15,6").
+// Scannable capsules + statlets (P/E cores, GPU cores, proper GHz). Uses DesignSystem. Consistent with SpecsTeaserCard.
+struct OverviewContextStrip: View, Equatable {
+    let snapshot: ThermalSnapshot
+    let usage: SystemUsage?
+    let rangeTitle: String
+
+    private var specs: MacSpecs { fetchMacSpecs() }
+
+    var body: some View {
+        Button {
+            // Future: present beautiful HardwareReport sheet/page with expanded data, Canvas vizs, export.
+            // For now keeps glance clean while delivering the "hack the data" teaser.
+        } label: {
+            HStack(spacing: 12) {
+                // Hardware identity (consistent with System tab). Friendly name (no raw "Mac15,6").
+                // Scannable capsule + statlets. Tap for future full report.
+                HStack(spacing: 8) {
+                    Image(systemName: "laptopcomputer")
+                        .macFanCallout()
+                        .foregroundStyle(Color.macFanVioletLight)
+                    Text(specs.name)
+                        .macFanSubhead()
+                        .foregroundStyle(Color.macFanPrimary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.macFanSurface, in: Capsule())
+
+                // Clean statlets (beautiful arrangement). Uses P/E + GPU cores when available.
+                // GHz formatting fixed; max freq omitted when unavailable (Apple silicon).
+                HStack(spacing: 10) {
+                    let cLabel: String = (specs.cpuPCores > 0 && specs.cpuECores > 0)
+                        ? "\(specs.cpuPCores)P+\(specs.cpuECores)E"
+                        : "\(specs.physicalCores)P/\(specs.logicalCores)L"
+                    Statlet(value: cLabel, label: "cores", icon: "cpu")
+                    Statlet(value: "\(specs.memoryGB) GB", label: "RAM", icon: "memorychip")
+                    if let gc = specs.gpuCores, gc > 0 {
+                        Statlet(value: "\(gc)c", label: "GPU", icon: "rectangle.3.group")
+                    }
+                    if let mhz = specs.maxCPUMHz, mhz > 500 {
+                        let ghz = Double(mhz) / 1000.0
+                        let f = ghz >= 4 ? String(format: "%.0f", ghz) : String(format: "%.1f", ghz)
+                        Statlet(value: "\(f) GHz", label: "max", icon: "gauge")
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                // Health + discovery (right, calm)
+                HStack(spacing: 8) {
+                    let pressure = usage?.thermalStateRaw ?? 0
+                    let pColor: Color = pressure >= 2 ? .macFanCoral : pressure == 1 ? .macFanAmberLight : .macFanMint
+                    Circle().fill(pColor).frame(width: 7, height: 7)
+                    Text("\(snapshot.sensors.count)s · \(snapshot.fans.count)f")
+                        .macFanChartTick()
+                        .foregroundStyle(Color.macFanSecondary)
+                    if let u = usage, u.uptime > 3600 {
+                        Text(SystemUsageView.uptimeText(u.uptime))
+                            .macFanChartTick()
+                            .foregroundStyle(Color.macFanMuted)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.025), in: Capsule())
+            }
+        }
+        .buttonStyle(MacFanPressableStyle())
+        .macFanHoverSpecial()
+        .padding(.horizontal, 2)
+    }
+
+    static func == (lhs: OverviewContextStrip, rhs: OverviewContextStrip) -> Bool {
+        lhs.snapshot.sourceStatus == rhs.snapshot.sourceStatus &&
+        lhs.snapshot.sensors.count == rhs.snapshot.sensors.count &&
+        lhs.snapshot.fans.count == rhs.snapshot.fans.count &&
+        lhs.usage?.thermalStateRaw == rhs.usage?.thermalStateRaw &&
+        lhs.rangeTitle == rhs.rangeTitle
+    }
+}
+
+
+
+private struct Statlet: View {
+    let value: String
+    let label: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .macFanCaption()
+                .foregroundStyle(Color.macFanBlue)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value)
+                    .macFanNumber(12, weight: .semibold)
+                    .foregroundStyle(Color.macFanPrimary)
+                Text(label)
+                    .macFanChartTick()
+                    .foregroundStyle(Color.macFanMuted)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(0.02), in: RoundedRectangle(cornerRadius: 5))
+    }
 }
