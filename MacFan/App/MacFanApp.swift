@@ -46,8 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         dashboardController = DashboardWindowController(model: model, settings: settings)
-        statusController = StatusItemController(model: model, settings: settings) { [weak self] in
-            self?.dashboardController?.show()
+        statusController = StatusItemController(model: model, settings: settings) { [weak self] tab in
+            self?.dashboardController?.show(tab: tab)
         }
         observeSleepWake()
         observeDashboardVisibility()
@@ -62,9 +62,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             feedbackCoordinator = FeedbackCoordinator(model: model)
         }
         model.start()
-        // Auto-show the full dashboard on normal launch so the user can immediately see the Overview tab changes when double-clicking the app in Applications.
-        // The app remains primarily menu-bar driven (popover for quick access), but opening the app brings up the rich dashboard.
-        dashboardController?.show()
         if ProcessInfo.processInfo.environment["MACFAN_UI_TEST_MODE"] == "1" {
             if ProcessInfo.processInfo.environment["MACFAN_UI_TEST_POPOVER"] == "1" {
                 showPopoverFixture()
@@ -183,9 +180,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.delegate = self
         window.contentView = NSHostingView(
             rootView: PopoverView(
-                onShowDashboard: { [weak self] in
+                onShowDashboard: { [weak self] tab in
                     self?.fixturePopoverWindow?.orderOut(nil)
-                    self?.dashboardController?.show()
+                    self?.dashboardController?.show(tab: tab)
                 },
                 onShowSettings: {
                     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)

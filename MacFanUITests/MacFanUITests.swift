@@ -99,8 +99,17 @@ final class MacFanUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["System"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Session activity"].waitForExistence(timeout: 5))
 
+        app.buttons["dashboard-tab-Battery"].tap()
+        let powerMetric = app.buttons["battery-metric-power"]
+        XCTAssertTrue(powerMetric.waitForExistence(timeout: 5))
+        powerMetric.tap()
+        XCTAssertTrue(app.staticTexts["Power flow"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Done"].isHittable)
+        app.buttons["Done"].tap()
+        XCTAssertFalse(app.staticTexts["Power flow"].exists)
+
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "MacFan system and tab navigation"
+        screenshot.name = "MacFan Battery and tab navigation"
         screenshot.lifetime = .keepAlways
         add(screenshot)
         app.terminate()

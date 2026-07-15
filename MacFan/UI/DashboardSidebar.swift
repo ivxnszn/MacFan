@@ -15,6 +15,7 @@ struct DashboardSidebar: View {
     /// Local focus only; the helper still receives a complete validated target map.
     @State private var selectedFanID: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var navigationSelection
 
     var body: some View {
         VStack(spacing: 0) {
@@ -150,6 +151,7 @@ struct DashboardSidebar: View {
                 Button {
                     guard selectedTab != tab else { return }
                     selectedTab = tab
+                    MacFanHaptics.tick()
                 } label: {
                     HStack(spacing: 11) {
                         Image(systemName: tab.icon)
@@ -172,6 +174,7 @@ struct DashboardSidebar: View {
                         if selectedTab == tab {
                             RoundedRectangle(cornerRadius: 11, style: .continuous)
                                 .fill(Color.macFanViolet.opacity(0.14))
+                                .matchedGeometryEffect(id: "sidebar-navigation-selection", in: navigationSelection)
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                                         .stroke(Color.macFanViolet.opacity(0.24), lineWidth: 0.75)
@@ -185,6 +188,7 @@ struct DashboardSidebar: View {
                 .accessibilityIdentifier("dashboard-tab-\(tab.rawValue)")
             }
         }
+        .animation(reduceMotion ? nil : MacFanMetrics.springSelection, value: selectedTab)
     }
 
     private func disclosureLabel(title: String, icon: String, detail: String) -> some View {
@@ -251,7 +255,6 @@ struct DashboardSidebar: View {
                     .macFanHeadline()
                     .foregroundStyle(Color.macFanPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.82)
                     .accessibilityIdentifier("control-status-title")
                 if !cap.monitorLabel.isEmpty {
                     Text(cap.monitorLabel)
@@ -280,7 +283,6 @@ struct DashboardSidebar: View {
                         .macFanCallout()
                         .foregroundStyle(Color.macFanSecondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.78)
                 }
                 .padding(.leading, 2)
             }
@@ -333,38 +335,36 @@ struct DashboardSidebar: View {
         .accessibilityLabel(ready ? "Control ready. Auto on exit." : "\(cap.shortReason). Monitoring only.")
     }
 
-    /// Compact, scannable vitals strip. Beautiful micros using DesignSystem (LiveDot, macFanNumber,
-    /// 8pt rhythm, capsules). Adds avg fan RPM + richer health for interesting at-a-glance data.
-    /// Lightweight: snapshot + ProcessInfo only.
+    /// One readable status sentence. Previous micro-capsules abbreviated
+    /// sensors/fans to "s" and "f" and scaled text below the 10pt floor.
     private var glanceRow: some View {
         let sensorCount = model.snapshot.sensors.count
         let fanCount = model.snapshot.fans.count
         let ready = model.capability.canControl
         let healthTint: Color = ready ? .macFanMint : .macFanAmberLight
-        let thermal = model.snapshot.displayTemperature?.celsius
-        let band = thermal.map { ThermalPalette.band(for: $0) } ?? .muted
         let avgRPM = model.snapshot.averageActualRPM
-        let avgText = avgRPM.map { "\(Int($0))" } ?? "—"
+        let fanActivity = avgRPM.map { $0 < 1 ? "idle" : "\(Int($0.rounded())) RPM" } ?? "waiting"
 
-        return HStack(spacing: 5) {
-            glanceMetric(icon: ready ? "checkmark.shield.fill" : "lock.slash", value: ready ? "Ready" : "Read-only", tint: healthTint)
-            glanceMetric(icon: "sensor.tag.radiowaves.forward", value: "\(sensorCount)s", tint: .macFanIndigo)
-            glanceMetric(icon: "fanblades.fill", value: "\(fanCount)f", tint: .macFanViolet)
-            if fanCount > 0 { glanceMetric(icon: "gauge.medium", value: avgText, tint: .macFanCyan) }
-            Spacer(minLength: 0)
-            HStack(spacing: 4) {
-                Circle().fill(band.color.opacity(0.9)).frame(width: 5, height: 5)
-                Text(healthLabel(ready: ready, band: band, temp: thermal))
-                    .macFanCallout()
-                    .foregroundStyle(Color.macFanSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-            }
-            .help("Session uptime: \(uptimeText(ProcessInfo.processInfo.systemUptime))")
+        return HStack(spacing: 7) {
+            Image(systemName: ready ? "checkmark.shield.fill" : "lock.slash")
+                .macFanCaption()
+                .foregroundStyle(healthTint)
+            Text(ready ? "Ready" : "Read-only")
+                .foregroundStyle(Color.macFanPrimary)
+            statusDivider
+            Text("\(sensorCount) sensors")
+            statusDivider
+            Text("\(fanCount) fans")
+            Spacer(minLength: 6)
+            Text(fanActivity)
+                .monospacedDigit()
+                .foregroundStyle(Color.macFanSecondary)
         }
-        .macFanLabel(tracking: 0.1)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 5)
+        .macFanCaption()
+        .foregroundStyle(Color.macFanSecondary)
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .frame(height: 34)
         .background(
             Color.macFanSurfaceHigh.opacity(0.6),
             in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
@@ -377,22 +377,13 @@ struct DashboardSidebar: View {
             RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
                 .stroke(Color.macFanStroke.opacity(0.32), lineWidth: 0.5)
         }
+        .help("\(sensorCount) live sensors, \(fanCount) fans, \(fanActivity). Session uptime: \(uptimeText(ProcessInfo.processInfo.systemUptime))")
     }
 
-    private func glanceMetric(icon: String, value: String, tint: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(tint)
-            Text(value)
-                .macFanNumber(10, weight: .semibold)
-                .foregroundStyle(Color.macFanPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .background(Color.white.opacity(0.035), in: Capsule(style: .continuous))
+    private var statusDivider: some View {
+        Circle()
+            .fill(Color.macFanMuted.opacity(0.55))
+            .frame(width: 2.5, height: 2.5)
     }
 
     /// Ultra-compact quick actions using micros. Icon-forward, high-signal, premium feel.
@@ -457,12 +448,11 @@ struct DashboardSidebar: View {
         Button(action: action) {
             HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(isActive ? accent : (disabled ? Color.macFanMuted : accent))
                 Text(label)
                     .macFanCaption()
                     .lineLimit(1)
-                    .minimumScaleFactor(0.78)
                     .foregroundStyle(isActive ? Color.macFanPrimary : (disabled ? Color.macFanMuted : Color.macFanSecondary))
             }
             .padding(.horizontal, 6)
@@ -696,10 +686,9 @@ struct DashboardSidebar: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "fanblades.fill")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                             Text(fan.name)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.75)
                         }
                         .macFanCaption()
                         .foregroundStyle(selected ? Color.macFanPrimary : Color.macFanSecondary)
@@ -842,7 +831,7 @@ struct SidebarModeButton: View {
                         isActive ? accent.opacity(0.20) : Color.white.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                     )
-                    .macFanEngagePulse(isActive: isActive, accent: accent, cornerRadius: 10, maxScale: 1.6)
+                    .macFanEngagePulse(isActive: isActive, accent: accent, cornerRadius: 10, maxScale: 1.12)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(mode.uiTitle)
                         .macFanSubhead()

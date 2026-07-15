@@ -8,6 +8,31 @@ struct SystemUsagePoint: Identifiable, Equatable {
     let gpu: Double?
     var id: Date { timestamp }
 }
+
+struct BatterySessionPoint: Identifiable, Equatable {
+    let timestamp: Date
+    let percent: Double
+    let signedWatts: Double?
+    let flowState: BatteryFlowState
+    let temperatureCelsius: Double?
+    var id: Date { timestamp }
+}
+
+enum BatterySessionRules {
+    /// A visible-session trend must never draw across a hidden-window gap or
+    /// across a change in energy direction. Both would create a convincing but
+    /// false slope/rate in the chart.
+    static func shouldStartNewSegment(
+        previous: BatterySessionPoint?,
+        next: BatterySessionPoint,
+        maximumGap: TimeInterval = 15
+    ) -> Bool {
+        guard let previous else { return false }
+        let gap = next.timestamp.timeIntervalSince(previous.timestamp)
+        return gap <= 0 || gap > maximumGap || previous.flowState != next.flowState
+    }
+}
+
 private struct SystemUsagePresentation: Equatable {
     var usage: SystemUsage?
     var history: [SystemUsagePoint]
@@ -15,8 +40,9 @@ private struct SystemUsagePresentation: Equatable {
     var memorySpark: [Double]
     var gpuSpark: [Double]
     var batterySpark: [Double]
+    var batteryHistory: [BatterySessionPoint]
 
-    static let empty = Self(usage: nil, history: [], cpuSpark: [], memorySpark: [], gpuSpark: [], batterySpark: [])
+    static let empty = Self(usage: nil, history: [], cpuSpark: [], memorySpark: [], gpuSpark: [], batterySpark: [], batteryHistory: [])
 }
 @MainActor
 final class SystemUsageViewModel: ObservableObject {
@@ -30,8 +56,9 @@ final class SystemUsageViewModel: ObservableObject {
     var memorySpark: [Double] { presentation.memorySpark }
     var gpuSpark: [Double] { presentation.gpuSpark }
     var batterySpark: [Double] { presentation.batterySpark }
+    var batteryHistory: [BatterySessionPoint] { presentation.batteryHistory }
 
-    func run() async {
+    func run(pollEvery interval: Duration = .seconds(2)) async {
         // Every visible System page owns the newest generation. A rapid
         // leave/re-enter therefore invalidates the cancelled task without
         // allowing an old `isRunning` flag to strand the new page.
@@ -44,7 +71,7 @@ final class SystemUsageViewModel: ObservableObject {
         guard !Task.isCancelled, generation == runGeneration else { return }
         publish(first)
         while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: interval)
             guard !Task.isCancelled, generation == runGeneration else { return }
             let next = await sampler.sample()
             guard !Task.isCancelled, generation == runGeneration else { return }
@@ -58,17 +85,35 @@ final class SystemUsageViewModel: ObservableObject {
         var memorySpark = presentation.memorySpark
         var gpuSpark = presentation.gpuSpark
         var batterySpark = presentation.batterySpark
+        var batteryHistory = presentation.batteryHistory
         let point = SystemUsagePoint(timestamp: .now, cpu: next.cpuTotalPercent, memory: next.memoryPercent, gpu: next.gpuPercent)
         history.append(point)
         if history.count > 90 { history.removeFirst(history.count - 90) }
         cpuSpark.append(next.cpuTotalPercent)
         memorySpark.append(next.memoryPercent)
         if let gpu = next.gpuPercent { gpuSpark.append(gpu) }
-        if let bp = next.batteryPercent { batterySpark.append(bp) }
+        if let bp = next.batteryPercent,
+           let sampledAt = next.batterySampledAt,
+           presentation.batteryHistory.last?.timestamp != sampledAt {
+            let batteryPoint = BatterySessionPoint(
+                timestamp: sampledAt,
+                percent: bp,
+                signedWatts: next.batterySignedWatts,
+                flowState: next.batteryFlowState,
+                temperatureCelsius: next.batteryTempC
+            )
+            if BatterySessionRules.shouldStartNewSegment(previous: batteryHistory.last, next: batteryPoint) {
+                batteryHistory.removeAll(keepingCapacity: true)
+                batterySpark.removeAll(keepingCapacity: true)
+            }
+            batterySpark.append(bp)
+            batteryHistory.append(batteryPoint)
+        }
         if cpuSpark.count > 90 { cpuSpark.removeFirst(cpuSpark.count - 90) }
         if memorySpark.count > 90 { memorySpark.removeFirst(memorySpark.count - 90) }
         if gpuSpark.count > 90 { gpuSpark.removeFirst(gpuSpark.count - 90) }
         if batterySpark.count > 90 { batterySpark.removeFirst(batterySpark.count - 90) }
+        if batteryHistory.count > 360 { batteryHistory.removeFirst(batteryHistory.count - 360) }
         let displayedUsage = presentation.usage.flatMap { presentationEquivalent($0, next) ? $0 : nil } ?? next
         presentation = SystemUsagePresentation(
             usage: displayedUsage,
@@ -76,7 +121,8 @@ final class SystemUsageViewModel: ObservableObject {
             cpuSpark: cpuSpark,
             memorySpark: memorySpark,
             gpuSpark: gpuSpark,
-            batterySpark: batterySpark
+            batterySpark: batterySpark,
+            batteryHistory: batteryHistory
         )
     }
 
@@ -90,7 +136,11 @@ final class SystemUsageViewModel: ObservableObject {
             && lhs.thermalStateRaw == rhs.thermalStateRaw
             && Int(lhs.batteryPercent ?? -1) == Int(rhs.batteryPercent ?? -1)
             && lhs.batteryCharging == rhs.batteryCharging
+            && lhs.batteryFlowState == rhs.batteryFlowState
+            && lhs.batteryOnExternalPower == rhs.batteryOnExternalPower
+            && lhs.batterySampledAt == rhs.batterySampledAt
             && bucket(lhs.batteryWatts ?? -1, step: 0.5) == bucket(rhs.batteryWatts ?? -1, step: 0.5)
+            && bucket(lhs.batterySignedWatts ?? -999, step: 0.5) == bucket(rhs.batterySignedWatts ?? -999, step: 0.5)
             && bucket(lhs.batteryHealthPercent ?? -1, step: 0.5) == bucket(rhs.batteryHealthPercent ?? -1, step: 0.5)
             && lhs.batteryCycleCount == rhs.batteryCycleCount
             && bucket(lhs.batteryAdapterWatts ?? -1, step: 1) == bucket(rhs.batteryAdapterWatts ?? -1, step: 1)
@@ -121,12 +171,14 @@ private enum SystemChartMetric: String, CaseIterable, Identifiable {
 struct SystemUsageView: View {
     @ObservedObject private var viewModel: SystemUsageViewModel
     let isActive: Bool
+    let onShowBattery: () -> Void
     @State private var chartMetric: SystemChartMetric = .cpu
     @State private var showsTechnicalDetails = false
 
-    init(viewModel: SystemUsageViewModel, isActive: Bool = true) {
+    init(viewModel: SystemUsageViewModel, isActive: Bool = true, onShowBattery: @escaping () -> Void = {}) {
         self.viewModel = viewModel
         self.isActive = isActive
+        self.onShowBattery = onShowBattery
     }
 
     private var usage: SystemUsage? { viewModel.usage }
@@ -263,20 +315,12 @@ struct SystemUsageView: View {
                 detail: "↓ \(Self.rate(usage?.networkReceivedKBps ?? 0)) · ↑ \(Self.rate(usage?.networkSentKBps ?? 0))",
                 color: .macFanBlue
             )
-            // Rich battery card in System tab: detailed + beautiful. Prominent power in W (calculated |I|×V from IOPS/SMC),
-            // smooth numeric transitions, charging emphasis, raw mA/V, health/cycles/time/adapter/temp. 144Hz lightweight.
-            BatteryRichCard(
+            SystemBatteryLink(
                 percent: usage?.batteryPercent,
-                charging: usage?.batteryCharging ?? false,
-                watts: usage?.batteryWatts,
+                flowState: usage?.batteryFlowState ?? .unknown,
+                signedWatts: usage?.batterySignedWatts,
                 health: usage?.batteryHealthPercent,
-                cycles: usage?.batteryCycleCount,
-                adapterWatts: usage?.batteryAdapterWatts,
-                tempC: usage?.batteryTempC,
-                currentMA: usage?.batteryCurrentMA,
-                voltageMV: usage?.batteryVoltageMV,
-                spark: viewModel.batterySpark,
-                detail: batteryDetail
+                action: onShowBattery
             )
             SecondarySystemCard(
                 title: "Storage",
@@ -534,6 +578,76 @@ private struct SecondarySystemCard: View {
 /// Especially shows charging power in Watts (W) calculated |current| × voltage from IOPS or SMC/AppleSmartBattery.
 /// Smooth numeric transitions (.contentTransition + custom) for 144 Hz friendly smooth numbers. Lightweight (no per-frame).
 /// Includes % bar, prominent W, mA/V details, health, cycles, adapter, temp, remaining.
+private struct SystemBatteryLink: View {
+    let percent: Double?
+    let flowState: BatteryFlowState
+    let signedWatts: Double?
+    let health: Double?
+    let action: () -> Void
+
+    private var tint: Color {
+        switch flowState {
+        case .charging: .macFanMint
+        case .discharging: .macFanVioletLight
+        case .connectedIdle: .macFanCyan
+        case .unknown: .macFanMuted
+        }
+    }
+
+    private var flowText: String {
+        guard let signedWatts else { return flowState.title }
+        if abs(signedWatts) < 0.05 { return flowState.title }
+        return String(format: "%@ · %@%.1f W", flowState.title, signedWatts > 0 ? "+" : "−", abs(signedWatts))
+    }
+
+    private var batterySymbol: String {
+        guard flowState != .charging else { return "bolt.fill" }
+        switch percent ?? 100 {
+        case ..<25: return "battery.25"
+        case ..<50: return "battery.50"
+        case ..<75: return "battery.75"
+        default: return "battery.100"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                Image(systemName: batterySymbol)
+                    .macFanTitle2().foregroundStyle(tint)
+                    .frame(width: 38, height: 38)
+                    .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Battery").macFanSubhead().foregroundStyle(Color.macFanSecondary)
+                    HStack(alignment: .lastTextBaseline, spacing: 5) {
+                        Text(percent.map { "\(Int($0.rounded()))%" } ?? "—")
+                            .macFanNumber(24, weight: .semibold)
+                            .foregroundStyle(Color.macFanPrimary)
+                            .macFanLiveNumberTransition()
+                        if let health {
+                            Text("· \(Int(health.rounded()))% health")
+                                .macFanCaption().foregroundStyle(Color.macFanMuted)
+                        }
+                    }
+                    Text(flowText).macFanCaption().foregroundStyle(tint).lineLimit(1)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text("Open workspace").macFanCaption().foregroundStyle(Color.macFanBlue)
+                    Image(systemName: "chevron.right").macFanCaption().foregroundStyle(Color.macFanMuted)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
+            .background(Color.white.opacity(0.028), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Color.white.opacity(0.06), lineWidth: 0.5) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MacFanPressableStyle())
+        .accessibilityLabel("Open Battery workspace, \(flowText)")
+    }
+}
+
 private struct BatteryRichCard: View {
     let percent: Double?
     let charging: Bool

@@ -41,6 +41,7 @@ struct OverviewModules: View {
     /// Recent (received, sent) rates for the network mirror bars.
     @State private var networkTrail: [(down: Double, up: Double)] = []
     private let sampler = SystemUsageSampler()
+    let isActive: Bool
 
     /// Optional: when provided, modules become tappable and invoke this with the corresponding module.
     var onSelectModule: ((SensorModule) -> Void)? = nil
@@ -84,7 +85,8 @@ struct OverviewModules: View {
                 diskModule
             }
         }
-        .task {
+        .task(id: isActive) {
+            guard isActive else { return }
             _ = await sampler.sample()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)

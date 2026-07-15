@@ -9,6 +9,7 @@ final class DashboardWindowController: NSObject, NSWindowDelegate {
     // NSWindow always vends a default contentView, so nil-checking it cannot
     // tell us whether the SwiftUI hierarchy is attached.
     private var isContentAttached = false
+    private let router = DashboardRouter()
 
     init(model: AppModel, settings: AppSettings) {
         self.model = model
@@ -31,13 +32,14 @@ final class DashboardWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
     }
 
-    func show() {
-        // Always re-attach the SwiftUI view on show() to ensure the latest code
-        // and state (including new Overview features) are used. This prevents
-        // stale/black content from previous launches or debug builds.
-        window.contentView = NSHostingView(rootView: DashboardView().environmentObject(model).environmentObject(settings))
-        isContentAttached = true
+    func show(tab: DashboardTab? = nil) {
+        if let tab { router.selectedTab = tab }
+        if !isContentAttached {
+            window.contentView = NSHostingView(rootView: DashboardView(router: router).environmentObject(model).environmentObject(settings))
+            isContentAttached = true
+        }
         NSApp.activate(ignoringOtherApps: true)
+        if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
         model.surfaceDidShow(.dashboard)
     }
@@ -47,6 +49,15 @@ final class DashboardWindowController: NSObject, NSWindowDelegate {
         isContentAttached = false
         model.surfaceDidHide(.dashboard)
     }
+}
+
+@MainActor
+final class DashboardRouter: ObservableObject {
+    @Published var selectedTab: DashboardTab = .overview
+    /// Kept by the router but intentionally not published through it. Only the
+    /// visible System/Battery page observes this session, so a CPU sample does
+    /// not invalidate the dashboard header, sidebar, and unrelated charts.
+    let systemSession = SystemUsageViewModel()
 }
 
 enum DashboardTab: String, CaseIterable, Identifiable {
@@ -74,7 +85,7 @@ enum DashboardTab: String, CaseIterable, Identifiable {
         case .insights: "Derived from your recorded history"
         case .sensors: "Live SMC readings with session statistics"
         case .system: "Host usage · sampled only while visible"
-        case .battery: "Charge level, health, power, and discharge history"
+        case .battery: "Charge level, health, power flow, and visible-session history"
         }
     }
 }
@@ -85,7 +96,7 @@ struct DashboardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showExpertConfirmation = false
     @State private var showClearHistoryConfirmation = false
-    @State private var selectedTab: DashboardTab = .overview
+    @ObservedObject private var router: DashboardRouter
     @State private var isSidebarVisible = true
     @Namespace private var pillNamespace
     @Namespace private var tabNamespace
@@ -93,7 +104,13 @@ struct DashboardView: View {
     @State private var selectedDetail: DashboardDetail? = nil
     @State private var selectedInsight: Insight? = nil
     @State private var selectedLiveModule: SensorModule? = nil
-    @StateObject private var systemSession = SystemUsageViewModel()
+
+    init(router: DashboardRouter) {
+        self.router = router
+    }
+
+    private var selectedTab: DashboardTab { router.selectedTab }
+    private var systemSession: SystemUsageViewModel { router.systemSession }
 
     var body: some View {
         ZStack {
@@ -101,7 +118,7 @@ struct DashboardView: View {
             HStack(spacing: 0) {
                 if isSidebarVisible {
                     DashboardSidebar(
-                        selectedTab: $selectedTab,
+                        selectedTab: $router.selectedTab,
                         showExpertConfirmation: $showExpertConfirmation,
                         showClearHistoryConfirmation: $showClearHistoryConfirmation
                     )
@@ -111,7 +128,6 @@ struct DashboardView: View {
                     // while restoring comfortable Apple-style text measure.
                     .frame(width: 328)
                     .background(Color.macFanSurface.opacity(0.94))
-                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
                     Divider().overlay(Color.white.opacity(0.05))
                 }
                 VStack(spacing: 0) {
@@ -131,21 +147,23 @@ struct DashboardView: View {
         // Mode changes made from the sidebar deserve the same confirmation the
         // popover gives: a quiet capsule that floats up from the bottom.
         .overlay(alignment: .bottom) {
-            if let toast = model.toast {
-                Text(toast)
-                    .macFanSubhead()
-                    .foregroundStyle(Color.macFanPrimary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay { Capsule().stroke(Color.macFanStroke, lineWidth: 1) }
-                    .padding(.bottom, 18)
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            ZStack {
+                if let toast = model.toast {
+                    Text(toast)
+                        .macFanSubhead()
+                        .foregroundStyle(Color.macFanPrimary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay { Capsule().stroke(Color.macFanStroke, lineWidth: 1) }
+                        .padding(.bottom, 18)
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .animation(reduceMotion ? nil : MacFanMetrics.springStandard, value: model.toast)
         }
-        .animation(reduceMotion ? nil : MacFanMetrics.springStandard, value: model.toast)
-        .onChange(of: selectedTab) { _, _ in
+        .onChange(of: router.selectedTab) { _, _ in
             selectedDetail = nil
             selectedInsight = nil
             selectedLiveModule = nil
@@ -166,11 +184,15 @@ struct DashboardView: View {
                     evidenceSample: selectedSample,
                     onRevealInChart: { sample in
                         selectedSample = sample
-                        selectedTab = .overview
+                        router.selectedTab = .overview
                         // The inspector otherwise remains over the chart when
                         // the user reveals evidence from an Overview card.
                         // Dismiss it so the selected point is immediately
                         // visible and the action feels complete.
+                        selectedDetail = nil
+                        selectedInsight = nil
+                    },
+                    onClose: {
                         selectedDetail = nil
                         selectedInsight = nil
                     }
@@ -257,6 +279,7 @@ struct DashboardView: View {
                             snapshot: model.snapshot,
                             history: model.history,
                             usage: systemSession.usage,
+                            isActive: model.isDashboardVisible,
                             temperatureUnit: settings.temperatureUnit,
                             onClose: { selectedLiveModule = nil },
                             onRevealSample: { sample in
@@ -268,9 +291,9 @@ struct DashboardView: View {
                     .padding(12)
                     .background(Color.macFanSurface.opacity(0.6), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusL, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: MacFanMetrics.radiusL).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .transition(reduceMotion ? .identity : .opacity)
                 } else {
-                    OverviewModules(onSelectModule: { module in
+                    OverviewModules(isActive: model.isDashboardVisible, onSelectModule: { module in
                         selectedLiveModule = module
                         MacFanHaptics.tick()
                     })
@@ -319,9 +342,13 @@ struct DashboardView: View {
         case .sensors:
             SensorsView(session: model.sensorSession)
         case .system:
-            SystemUsageView(viewModel: systemSession, isActive: model.isDashboardVisible)
+            SystemUsageView(
+                viewModel: systemSession,
+                isActive: model.isDashboardVisible,
+                onShowBattery: { router.selectedTab = .battery }
+            )
         case .battery:
-            BatteryInsightsTab(viewModel: systemSession)
+            BatteryInsightsTab(viewModel: systemSession, isActive: model.isDashboardVisible)
         }
     }
 
@@ -337,11 +364,11 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             Button {
-                if reduceMotion {
-                    isSidebarVisible.toggle()
-                } else {
-                    withAnimation(.easeInOut(duration: MacFanMetrics.animationFast)) { isSidebarVisible.toggle() }
-                }
+                // Changing a 328pt column width in an animation forces every
+                // visible chart to relayout on each frame. Commit the layout
+                // once; the button's press feedback still acknowledges input.
+                isSidebarVisible.toggle()
+                MacFanHaptics.tick()
             } label: {
                 Image(systemName: "sidebar.leading")
                     .macFanHeadline()
@@ -367,47 +394,11 @@ struct DashboardView: View {
                 }
             }
             Spacer(minLength: 12)
-            // Original top tab bar (reverted to before)
-            HStack(spacing: 2) {
-                ForEach(DashboardTab.allCases) { tab in
-                    Button {
-                        guard selectedTab != tab else { return }
-                        if reduceMotion {
-                            selectedTab = tab
-                        } else {
-                            withAnimation(MacFanMetrics.springSelection) { selectedTab = tab }
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: tab.icon)
-                                .font(.system(size: 11, weight: .medium))
-                            Text(tab.rawValue)
-                                .macFanSubhead()
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .foregroundStyle(selectedTab == tab ? Color.macFanPrimary : Color.macFanSecondary)
-                        .padding(.horizontal, 11)
-                        .frame(height: 30)
-                        .background {
-                            if selectedTab == tab {
-                                RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
-                                    .fill(Color.white.opacity(0.095))
-                                    .matchedGeometryEffect(id: "dashboard-tab", in: tabNamespace)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(MacFanPressableStyle(pressedScale: 0.97))
-                    .accessibilityIdentifier("dashboard-tab-\(tab.rawValue)")
-                    .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+            if !isSidebarVisible {
+                ViewThatFits(in: .horizontal) {
+                    dashboardTabBar(showsTitles: true)
+                    dashboardTabBar(showsTitles: false)
                 }
-            }
-            .padding(3)
-            .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
             }
             Spacer()
             if selectedTab == .overview {
@@ -470,6 +461,51 @@ struct DashboardView: View {
             }
         }
     }
+
+    private func dashboardTabBar(showsTitles: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach(DashboardTab.allCases) { tab in
+                Button {
+                    guard selectedTab != tab else { return }
+                    router.selectedTab = tab
+                    MacFanHaptics.tick()
+                } label: {
+                    HStack(spacing: showsTitles ? 6 : 0) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 11, weight: .medium))
+                        if showsTitles {
+                            Text(tab.rawValue)
+                                .macFanSubhead()
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                    }
+                    .foregroundStyle(selectedTab == tab ? Color.macFanPrimary : Color.macFanSecondary)
+                    .padding(.horizontal, showsTitles ? 11 : 9)
+                    .frame(height: 30)
+                    .background {
+                        if selectedTab == tab {
+                            RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
+                                .fill(Color.white.opacity(0.095))
+                                .matchedGeometryEffect(id: "dashboard-tab-\(showsTitles)", in: tabNamespace)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(MacFanPressableStyle(pressedScale: 0.97))
+                .help(tab.rawValue)
+                .accessibilityIdentifier("dashboard-tab-\(tab.rawValue)")
+                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: MacFanMetrics.radiusS, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+        }
+        .animation(reduceMotion ? nil : MacFanMetrics.springSelection, value: selectedTab)
+    }
 }
 
 private struct DashboardInspector: View {
@@ -482,6 +518,7 @@ private struct DashboardInspector: View {
     let temperatureUnit: TemperatureUnit
     let evidenceSample: TelemetrySample?
     let onRevealInChart: (TelemetrySample) -> Void
+    let onClose: () -> Void
 
     private var peakSample: TelemetrySample? {
         history.max {
@@ -535,6 +572,7 @@ private struct DashboardInspector: View {
             .padding(18)
         }
         .background(Color.macFanCanvas)
+        .onExitCommand(perform: onClose)
     }
 
     private var inspectorHeader: some View {
@@ -548,6 +586,17 @@ private struct DashboardInspector: View {
                 Text(headerTitle).macFanTitle2().foregroundStyle(Color.macFanPrimary)
                 Text(headerSubtitle).macFanCallout().foregroundStyle(Color.macFanSecondary)
             }
+            Spacer()
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .macFanCaption()
+                    .foregroundStyle(Color.macFanSecondary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(MacFanPressableStyle(pressedScale: 0.97))
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel("Close details")
         }
     }
 
@@ -777,285 +826,477 @@ private struct InspectorEvidenceRow: View {
 }
 
 // MARK: - Battery
-// A glance-first battery surface: one strong state signal, then progressive
-// disclosure for the electrical details. Adapter wattage is never presented as
-// live consumption; the live number is the cell-side estimate (I × V).
+
+private struct BatteryPresentation: Equatable {
+    let percent: Double
+    let flowState: BatteryFlowState
+    let onExternalPower: Bool?
+    let sampledAt: Date?
+    let minutesRemaining: Int?
+    let watts: Double?
+    let signedWatts: Double?
+    let healthPercent: Double?
+    let cycleCount: Int?
+    let adapterWatts: Double?
+    let temperatureCelsius: Double?
+    let currentMilliamps: Double?
+    let voltageMillivolts: Double?
+
+    init?(usage: SystemUsage?) {
+        guard let usage, let percent = usage.batteryPercent else { return nil }
+        self.percent = min(max(percent, 0), 100)
+        flowState = usage.batteryFlowState
+        onExternalPower = usage.batteryOnExternalPower
+        sampledAt = usage.batterySampledAt
+        minutesRemaining = usage.batteryMinutesRemaining
+        watts = usage.batteryWatts
+        signedWatts = usage.batterySignedWatts
+        healthPercent = usage.batteryHealthPercent
+        cycleCount = usage.batteryCycleCount
+        adapterWatts = usage.batteryAdapterWatts
+        temperatureCelsius = usage.batteryTempC
+        currentMilliamps = usage.batteryCurrentMA
+        voltageMillivolts = usage.batteryVoltageMV
+    }
+}
+
 private struct BatteryInsightsTab: View {
     @ObservedObject var viewModel: SystemUsageViewModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showsElectricalDetails = false
-    @State private var showsCycleAnalysis = false
+    let isActive: Bool
 
-    private var usage: SystemUsage? { viewModel.usage }
-    private var percent: Double { min(max(usage?.batteryPercent ?? 0, 0), 100) }
-    private var displayPercent: Int { Int(percent.rounded()) }
-    private var isCharging: Bool { usage?.batteryCharging == true && percent < 99.9 }
+    var body: some View {
+        Group {
+            if let battery = BatteryPresentation(usage: viewModel.usage) {
+                BatteryWorkspace(battery: battery, history: viewModel.batteryHistory, isActive: isActive)
+                    .equatable()
+            } else {
+                BatteryEmptyState()
+            }
+        }
+        // The dashboard owns the only vertical ScrollView. This task is
+        // cancelled on tab change, so hidden Battery UI performs no work.
+        .task(id: isActive) {
+            guard isActive else { return }
+            await viewModel.run(pollEvery: .seconds(5))
+        }
+    }
+}
+
+private enum BatteryDetail: String, Hashable {
+    case time
+    case power
+    case health
+    case temperature
+
+    var title: String {
+        switch self {
+        case .time: "Visible-session history"
+        case .power: "Power flow"
+        case .health: "Battery health"
+        case .temperature: "Temperature"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .time: "chart.xyaxis.line"
+        case .power: "bolt.horizontal.fill"
+        case .health: "heart.text.square"
+        case .temperature: "thermometer.medium"
+        }
+    }
+}
+
+private enum BatteryFocus: Hashable {
+    case metric(BatteryDetail)
+    case detail(BatteryDetail)
+}
+
+private struct BatteryWorkspace: View, Equatable {
+    let battery: BatteryPresentation
+    let history: [BatterySessionPoint]
+    let isActive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var detail: BatteryDetail?
+    @AccessibilityFocusState private var accessibilityFocus: BatteryFocus?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.battery == rhs.battery && lhs.history == rhs.history && lhs.isActive == rhs.isActive
+    }
+
+    private var displayPercent: Int { Int(battery.percent.rounded()) }
+    private var isCharging: Bool { battery.flowState == .charging }
+    private var batterySymbol: String {
+        switch battery.percent {
+        case ..<25: return "battery.25"
+        case ..<50: return "battery.50"
+        case ..<75: return "battery.75"
+        default: return "battery.100"
+        }
+    }
     private var accent: Color {
         if isCharging { return .macFanMint }
-        if percent <= 15 { return .macFanCoral }
-        if percent <= 30 { return .macFanAmberLight }
+        if battery.percent <= 15 { return .macFanCoral }
+        if battery.percent <= 30 { return .macFanAmberLight }
         return .macFanIndigo
-    }
-    private var stateTitle: String {
-        if isCharging { return "Charging" }
-        if percent <= 15 { return "Low battery" }
-        if percent >= 99.5 { return "Fully charged" }
-        return "On battery"
-    }
-    private var stateDetail: String {
-        if let minutes = usage?.batteryMinutesRemaining, minutes > 0 {
-            return isCharging ? "About \(durationText(minutes)) until full" : "About \(durationText(minutes)) remaining"
-        }
-        return isCharging ? "Power is flowing into the battery" : "Live battery estimate"
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if usage?.batteryPercent != nil {
-                    batteryHero
-                    electricalDetails
-                    dischargeAnalysis
-                    chargingPower
-                    Text("Measured locally from macOS. Battery sampling pauses when this window is hidden.")
-                        .macFanCaption()
-                        .foregroundStyle(Color.macFanMuted)
-                        .padding(.horizontal, 2)
-                } else {
-                    emptyBatteryState
-                }
+        VStack(alignment: .leading, spacing: MacFanMetrics.spacing) {
+            hero
+            if let detail {
+                depthPanel(detail)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
+            Text("Measured locally from macOS. Battery sampling and charging motion stop when this page closes.")
+                .macFanCaption()
+                .foregroundStyle(Color.macFanMuted)
+                .padding(.horizontal, 2)
         }
-        .scrollIndicators(.hidden)
-        .task {
-            await viewModel.run()
-        }
+        .onExitCommand { closeDetail() }
     }
 
-    private var batteryHero: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack {
-                Label("Battery", systemImage: "battery.100")
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            HStack(spacing: 9) {
+                Image(systemName: batterySymbol)
                     .macFanHeadline()
-                    .foregroundStyle(Color.macFanPrimary)
-                Text(stateTitle.uppercased())
+                    .foregroundStyle(accent)
+                Text("Battery").macFanHeadline().foregroundStyle(Color.macFanPrimary)
+                Text(battery.flowState.title)
                     .macFanCaption()
                     .foregroundStyle(accent)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8)
+                    .frame(height: 23)
                     .background(accent.opacity(0.12), in: Capsule())
                 Spacer()
-                Circle().fill(accent).frame(width: 7, height: 7)
-                Text("Live").macFanCaption().foregroundStyle(Color.macFanSecondary)
+                LiveDot(color: accent)
+                Text("Live · 5 sec").macFanCaption().foregroundStyle(Color.macFanSecondary)
             }
 
-            HStack(alignment: .center, spacing: 22) {
-                BatteryLevelGraphic(percent: percent, tint: accent)
-                    .frame(width: 280, height: 132)
-                    .accessibilityLabel("Battery charge \(displayPercent) percent, \(stateTitle)")
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .lastTextBaseline, spacing: 5) {
-                        Text("\(displayPercent)")
-                            .macFanNumber(46, weight: .semibold)
-                            .foregroundStyle(Color.macFanPrimary)
-                            .contentTransition(.numericText())
-                        Text("%").macFanNumber(18, weight: .medium).foregroundStyle(Color.macFanSecondary)
-                    }
-                    Text(stateTitle).macFanTitle2().foregroundStyle(accent)
-                    Text(stateDetail).macFanCallout().foregroundStyle(Color.macFanSecondary)
-                    if viewModel.batterySpark.count > 1 {
-                        BatteryLevelTrail(values: viewModel.batterySpark, tint: accent)
-                            .frame(height: 38)
-                            .frame(maxWidth: 360)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-
-            Divider().overlay(Color.white.opacity(0.08))
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 0) {
-                    BatteryInsightMetric(title: "REMAINING", value: remainingText, detail: remainingDetail, tint: .macFanBlue)
-                    BatteryInsightMetric(title: "CELL POWER", value: wattsText, detail: isCharging ? "Live estimate" : "Current draw", tint: isCharging ? .macFanMint : .macFanVioletLight)
-                    BatteryInsightMetric(title: "HEALTH", value: healthText, detail: healthDetail, tint: .macFanMint)
-                    BatteryInsightMetric(title: "TEMPERATURE", value: temperatureText, detail: temperatureDetail, tint: .macFanAmberLight)
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    BatteryInsightMetric(title: "REMAINING", value: remainingText, detail: remainingDetail, tint: .macFanBlue)
-                    BatteryInsightMetric(title: "CELL POWER", value: wattsText, detail: isCharging ? "Live estimate" : "Current draw", tint: isCharging ? .macFanMint : .macFanVioletLight)
-                    BatteryInsightMetric(title: "HEALTH", value: healthText, detail: healthDetail, tint: .macFanMint)
-                    BatteryInsightMetric(title: "TEMPERATURE", value: temperatureText, detail: temperatureDetail, tint: .macFanAmberLight)
-                }
+                HStack(alignment: .center, spacing: 28) { batteryGraphic; primaryReading }
+                VStack(alignment: .leading, spacing: 14) { batteryGraphic; primaryReading }
+            }
+
+            Divider().overlay(Color.white.opacity(0.07))
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                metric(.time, title: "Remaining", value: remainingText, detail: remainingDetail, tint: .macFanBlue)
+                metric(.power, title: "Battery flow", value: signedWattsText, detail: flowDetail, tint: isCharging ? .macFanMint : .macFanVioletLight)
+                metric(.health, title: "Health", value: healthText, detail: healthDetail, tint: healthTint)
+                metric(.temperature, title: "Temperature", value: temperatureText, detail: temperatureDetail, tint: temperatureTint)
             }
         }
         .padding(18)
         .macFanCard(padding: 0, radius: 18, flatten: true)
         .overlay(alignment: .top) {
-            LinearGradient(colors: [accent.opacity(0.16), .clear], startPoint: .top, endPoint: .bottom)
-                .frame(height: 72)
+            LinearGradient(colors: [accent.opacity(0.11), .clear], startPoint: .top, endPoint: .bottom)
+                .frame(height: 84)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .allowsHitTesting(false)
         }
     }
 
-    private var electricalDetails: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsElectricalDetails.toggle() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "waveform.path.ecg").foregroundStyle(accent)
-                    Text("Electrical details").macFanSubhead().foregroundStyle(Color.macFanPrimary)
-                    Spacer()
-                    Text(showsElectricalDetails ? "Hide" : "Current, voltage, cycles")
-                        .macFanCaption().foregroundStyle(Color.macFanMuted)
-                    Image(systemName: showsElectricalDetails ? "chevron.up" : "chevron.down")
-                        .macFanCaption().foregroundStyle(Color.macFanMuted)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("battery-electrical-details")
-            if showsElectricalDetails {
-                HStack(spacing: 0) {
-                    BatteryTechnicalMetric(title: "Cell current", value: currentText)
-                    BatteryTechnicalMetric(title: "Cell voltage", value: voltageText)
-                    BatteryTechnicalMetric(title: "Cell power", value: wattsText)
-                    BatteryTechnicalMetric(title: "Cycle count", value: usage?.batteryCycleCount.map(String.init) ?? "—")
-                }
-                .padding(.top, 13)
-                .padding(.bottom, 4)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("battery-electrical-content")
-            }
-        }
-        .padding(15)
-        .macFanCard(padding: 0, radius: 14, flatten: true)
+    private var batteryGraphic: some View {
+        BatteryLevelGraphic(
+            percent: battery.percent,
+            tint: accent,
+            isCharging: isCharging,
+            isActive: isActive,
+            reduceMotion: reduceMotion
+        )
+        .frame(minWidth: 220, idealWidth: 290, maxWidth: 330, minHeight: 116, idealHeight: 130, maxHeight: 132)
+        .accessibilityLabel("Battery charge \(displayPercent) percent, \(battery.flowState.title)")
     }
 
-    private var dischargeAnalysis: some View {
+    private var primaryReading: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .lastTextBaseline, spacing: 5) {
+                Text("\(displayPercent)")
+                    .macFanNumber(50, weight: .semibold)
+                    .foregroundStyle(Color.macFanPrimary)
+                    .macFanLiveNumberTransition()
+                Text("%").macFanNumber(18, weight: .medium).foregroundStyle(Color.macFanSecondary)
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.28), value: displayPercent)
+            Text(battery.flowState.title).macFanTitle2().foregroundStyle(accent)
+            Text(stateDetail).macFanCallout().foregroundStyle(Color.macFanSecondary)
+            if history.count > 1 {
+                BatteryLevelTrail(values: history.map(\.percent), tint: accent)
+                    .frame(width: 300, height: 38)
+            }
+        }
+        .frame(minWidth: 230, maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func metric(_ kind: BatteryDetail, title: String, value: String, detail subtitle: String, tint: Color) -> some View {
         Button {
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsCycleAnalysis.toggle() }
+            let isClosing = detail == kind
+            if reduceMotion { detail = isClosing ? nil : kind }
+            else {
+                withAnimation(.easeOut(duration: 0.16)) { detail = isClosing ? nil : kind }
+            }
+            accessibilityFocus = isClosing ? .metric(kind) : .detail(kind)
+            MacFanHaptics.tick()
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack {
-                    Image(systemName: "chart.xyaxis.line").foregroundStyle(Color.macFanCyan)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Last discharge analysis").macFanSubhead().foregroundStyle(Color.macFanPrimary)
-                        Text(dischargeSummary).macFanCaption().foregroundStyle(Color.macFanSecondary)
-                    }
+                    Text(title).macFanCaption().foregroundStyle(Color.macFanMuted)
                     Spacer()
-                    Text(showsCycleAnalysis ? "Hide" : "Show history").macFanCaption().foregroundStyle(Color.macFanBlue)
-                    Image(systemName: showsCycleAnalysis ? "chevron.up" : "chevron.down").macFanCaption().foregroundStyle(Color.macFanMuted)
+                    Image(systemName: detail == kind ? "chevron.up" : "chevron.right")
+                        .macFanChartTick().foregroundStyle(detail == kind ? tint : Color.macFanMuted)
                 }
-                if showsCycleAnalysis {
-                    BatteryLevelTrail(values: viewModel.batterySpark, tint: .macFanCyan)
-                        .frame(height: 58)
-                        .padding(.top, 5)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Battery charge history")
-                        .accessibilityIdentifier("battery-cycle-content")
-                }
+                Text(value).macFanNumber(18, weight: .semibold).foregroundStyle(tint).macFanLiveNumberTransition()
+                Text(subtitle).macFanCaption().foregroundStyle(Color.macFanSecondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+            .padding(11)
+            .background(Color.white.opacity(detail == kind ? 0.055 : 0.025), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(detail == kind ? tint.opacity(0.35) : Color.white.opacity(0.05), lineWidth: 0.75)
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("battery-cycle-analysis")
-        .padding(15)
-        .macFanCard(padding: 0, radius: 14, flatten: true)
+        .buttonStyle(MacFanPressableStyle())
+        .accessibilityIdentifier("battery-metric-\(kind.rawValue)")
+        .accessibilityValue(detail == kind ? "Expanded" : "Collapsed")
+        .accessibilityFocused($accessibilityFocus, equals: .metric(kind))
     }
 
-    private var chargingPower: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "bolt.fill").foregroundStyle(isCharging ? Color.macFanMint : Color.macFanMuted)
-                Text("Charging power").macFanSubhead().foregroundStyle(Color.macFanPrimary)
-                Text(isCharging ? "LIVE" : "READY").macFanCaption().foregroundStyle(isCharging ? .macFanMint : Color.macFanMuted)
-                    .padding(.horizontal, 6).padding(.vertical, 2).background((isCharging ? Color.macFanMint : Color.white).opacity(0.08), in: Capsule())
-            }
-            if isCharging, let watts = usage?.batteryWatts {
-                HStack(alignment: .lastTextBaseline, spacing: 5) {
-                    Text(String(format: "%.1f", watts)).macFanNumber(28, weight: .semibold).foregroundStyle(Color.macFanMint)
-                    Text("W to battery cell").macFanCallout().foregroundStyle(Color.macFanSecondary)
+    private func depthPanel(_ selected: BatteryDetail) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: selected.icon)
+                    .macFanHeadline().foregroundStyle(accent)
+                    .frame(width: 32, height: 32)
+                    .background(accent.opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selected.title).macFanHeadline().foregroundStyle(Color.macFanPrimary)
+                    Text(detailSubtitle(selected)).macFanCallout().foregroundStyle(Color.macFanSecondary)
                 }
-                Text("Measured from battery current × voltage. Adapter rating is shown only as hardware context.")
-                    .macFanCaption().foregroundStyle(Color.macFanMuted)
-            } else {
-                Text("Connect a charger to observe cell-side charging power.")
-                    .macFanCallout().foregroundStyle(Color.macFanSecondary)
+                Spacer()
+                Button("Done", action: closeDetail)
+                    .buttonStyle(MacFanPressableStyle(pressedScale: 0.97))
+                    .macFanSubhead().foregroundStyle(Color.macFanBlue)
+                    .padding(.horizontal, 11).frame(height: 28)
+                    .background(Color.macFanBlue.opacity(0.10), in: Capsule())
+                    .keyboardShortcut(.cancelAction)
             }
+            Divider().overlay(Color.white.opacity(0.06))
+            detailContent(selected)
         }
-        .padding(15)
-        .macFanCard(padding: 0, radius: 14, flatten: true)
+        .padding(16)
+        .macFanCard(padding: 0, radius: 15, flatten: true)
+        .accessibilityIdentifier("battery-detail-\(selected.rawValue)")
+        .accessibilityFocused($accessibilityFocus, equals: .detail(selected))
     }
 
-    private var emptyBatteryState: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: "battery.100").font(.system(size: 44, weight: .medium)).foregroundStyle(Color.macFanMuted)
-            Text("No battery data yet").macFanTitle2().foregroundStyle(Color.macFanPrimary)
-            Text("MacFan will show this surface automatically on a portable Mac once macOS reports battery telemetry.")
-                .macFanCallout().foregroundStyle(Color.macFanSecondary)
+    @ViewBuilder
+    private func detailContent(_ selected: BatteryDetail) -> some View {
+        switch selected {
+        case .time:
+            BatterySessionChart(points: history, tint: accent)
+                .frame(height: 142)
+            HStack {
+                BatteryTechnicalMetric(title: "Observed", value: observedDuration)
+                BatteryTechnicalMetric(title: "Samples", value: "\(history.count)")
+                BatteryTechnicalMetric(title: "Session change", value: sessionChange)
+                BatteryTechnicalMetric(title: "Estimated rate", value: sessionRate)
+            }
+        case .power:
+            HStack {
+                BatteryTechnicalMetric(title: "Battery flow", value: signedWattsText)
+                BatteryTechnicalMetric(title: "Current magnitude", value: currentText)
+                BatteryTechnicalMetric(title: "Cell voltage", value: voltageText)
+                BatteryTechnicalMetric(title: "Adapter rating", value: adapterText)
+            }
+            Text("Battery flow is the cell-side estimate current × voltage. Adapter rating is hardware capability, not live wall consumption.")
+                .macFanCaption().foregroundStyle(Color.macFanMuted)
+        case .health:
+            HStack {
+                BatteryTechnicalMetric(title: "Capacity health", value: healthText)
+                BatteryTechnicalMetric(title: "Cycle count", value: battery.cycleCount.map(String.init) ?? "Not reported")
+                BatteryTechnicalMetric(title: "Charge level", value: "\(displayPercent)%")
+                BatteryTechnicalMetric(title: "Source", value: battery.healthPercent == nil ? "Not reported" : "Capacity vs design")
+            }
+            Text("MacFan never substitutes charge level for battery health. If macOS does not expose capacity data, health remains unreported.")
+                .macFanCaption().foregroundStyle(Color.macFanMuted)
+        case .temperature:
+            HStack {
+                BatteryTechnicalMetric(title: "Current", value: temperatureText)
+                BatteryTechnicalMetric(title: "Session low", value: sessionMinimumTemperature)
+                BatteryTechnicalMetric(title: "Session high", value: sessionMaximumTemperature)
+                BatteryTechnicalMetric(title: "Assessment", value: temperatureDetail)
+            }
+            Text("Battery temperature is separate from CPU temperature and comes from AppleSmartBattery when available.")
+                .macFanCaption().foregroundStyle(Color.macFanMuted)
         }
-        .padding(22)
-        .macFanCard(padding: 0, radius: 16)
     }
 
-    private var remainingText: String {
-        guard let minutes = usage?.batteryMinutesRemaining, minutes > 0 else { return "—" }
-        return durationText(minutes)
+    private func closeDetail() {
+        guard let closingDetail = detail else { return }
+        if reduceMotion { detail = nil }
+        else { withAnimation(.easeOut(duration: 0.14)) { detail = nil } }
+        accessibilityFocus = .metric(closingDetail)
     }
-    private var remainingDetail: String { isCharging ? "Until full" : "Estimated" }
-    private var wattsText: String { usage?.batteryWatts.map { String(format: "%.1f W", $0) } ?? "—" }
-    private var healthText: String { usage?.batteryHealthPercent.map { "\(Int($0.rounded()))%" } ?? "—" }
-    private var healthDetail: String { usage?.batteryHealthPercent == nil ? "Not reported" : "Battery condition" }
-    private var temperatureText: String { usage?.batteryTempC.map { "\(Int($0.rounded()))°C" } ?? "—" }
+
+    private func detailSubtitle(_ selected: BatteryDetail) -> String {
+        switch selected {
+        case .time: "Timestamped samples from this visible session"
+        case .power: "Direction, current, voltage, and adapter context"
+        case .health: "Capacity-backed information only"
+        case .temperature: "Current reading and visible-session range"
+        }
+    }
+
+    private var stateDetail: String {
+        if let minutes = battery.minutesRemaining, minutes > 0 {
+            return isCharging ? "About \(durationText(minutes)) until full" : "About \(durationText(minutes)) remaining"
+        }
+        switch battery.flowState {
+        case .charging: return "Energy is flowing into the battery cell"
+        case .discharging: return "Running from the internal battery"
+        case .connectedIdle: return "Adapter connected; battery is not charging"
+        case .unknown: return "Waiting for macOS power-source state"
+        }
+    }
+
+    private var remainingText: String { battery.minutesRemaining.map(durationText) ?? "—" }
+    private var remainingDetail: String { battery.minutesRemaining == nil ? "macOS has no estimate" : (isCharging ? "Until full" : "Estimated") }
+    private var signedWattsText: String {
+        guard let watts = battery.signedWatts else { return "—" }
+        if abs(watts) < 0.05 { return "0.0 W" }
+        return String(format: "%@%.1f W", watts > 0 ? "+" : "−", abs(watts))
+    }
+    private var flowDetail: String {
+        switch battery.flowState {
+        case .charging: "Into battery"
+        case .discharging: "From battery"
+        case .connectedIdle: "Adapter connected"
+        case .unknown: "Direction unavailable"
+        }
+    }
+    private var healthText: String { battery.healthPercent.map { "\(Int($0.rounded()))%" } ?? "—" }
+    private var healthDetail: String { battery.healthPercent == nil ? "Not reported" : "Capacity vs design" }
+    private var healthTint: Color {
+        guard let health = battery.healthPercent else { return .macFanMuted }
+        return health < 80 ? .macFanAmberLight : .macFanMint
+    }
+    private var temperatureText: String { battery.temperatureCelsius.map { "\(Int($0.rounded()))°C" } ?? "—" }
     private var temperatureDetail: String {
-        guard let temp = usage?.batteryTempC else { return "Not reported" }
-        return temp >= 38 ? "Warm" : "Moderate"
+        guard let temp = battery.temperatureCelsius else { return "Not reported" }
+        if temp < 10 { return "Cold" }
+        if temp < 35 { return "Normal" }
+        if temp < 40 { return "Warm" }
+        return "Hot"
     }
-    private var currentText: String { usage?.batteryCurrentMA.map { String(format: "%.0f mA", abs($0)) } ?? "—" }
-    private var voltageText: String { usage?.batteryVoltageMV.map { String(format: "%.2f V", $0 / 1000) } ?? "—" }
-    private var dischargeSummary: String {
-        if viewModel.batterySpark.count < 2 { return "Collecting charge history" }
-        let values = viewModel.batterySpark
-        let drop = max(0, (values.first ?? percent) - (values.last ?? percent))
-        return String(format: "%.0f%% used over the latest observations", drop)
+    private var temperatureTint: Color {
+        guard let temp = battery.temperatureCelsius else { return .macFanMuted }
+        if temp >= 40 { return .macFanCoral }
+        if temp >= 35 { return .macFanAmberLight }
+        return .macFanCyan
     }
+    private var currentText: String { battery.currentMilliamps.map { String(format: "%.0f mA", abs($0)) } ?? "—" }
+    private var voltageText: String { battery.voltageMillivolts.map { String(format: "%.2f V", $0 / 1_000) } ?? "—" }
+    private var adapterText: String {
+        if let watts = battery.adapterWatts { return "\(Int(watts.rounded())) W rating" }
+        switch battery.onExternalPower {
+        case true?: return "Connected"
+        case false?: return "Not connected"
+        case nil: return "Not reported"
+        }
+    }
+    private var observedDuration: String {
+        guard let first = history.first?.timestamp, let last = history.last?.timestamp else { return "Collecting" }
+        return durationText(max(0, Int(last.timeIntervalSince(first) / 60)))
+    }
+    private var sessionChange: String {
+        guard let first = history.first?.percent, let last = history.last?.percent else { return "—" }
+        return String(format: "%+.1f%%", last - first)
+    }
+    private var sessionRate: String {
+        guard let first = history.first, let last = history.last else { return "Stabilizing" }
+        let elapsed = last.timestamp.timeIntervalSince(first.timestamp)
+        guard elapsed >= 600 else { return "Stabilizing" }
+        return String(format: "%+.1f%%/h", (last.percent - first.percent) / elapsed * 3_600)
+    }
+    private var sessionMinimumTemperature: String { history.compactMap(\.temperatureCelsius).min().map { "\(Int($0.rounded()))°C" } ?? "—" }
+    private var sessionMaximumTemperature: String { history.compactMap(\.temperatureCelsius).max().map { "\(Int($0.rounded()))°C" } ?? "—" }
 
     private func durationText(_ minutes: Int) -> String {
         if minutes >= 60 { return "\(minutes / 60)h \(minutes % 60)m" }
-        return "\(minutes)m"
+        return minutes > 0 ? "\(minutes)m" : "<1m"
     }
 }
 
 private struct BatteryLevelGraphic: View {
     let percent: Double
     let tint: Color
+    let isCharging: Bool
+    let isActive: Bool
+    let reduceMotion: Bool
+    @State private var displayedPercent: Double = 0
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             GeometryReader { proxy in
-                let fraction = min(max(percent / 100, 0), 1)
+                let fraction = min(max(displayedPercent / 100, 0), 1)
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.black.opacity(0.26))
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(tint.gradient)
-                        .frame(width: max(9, proxy.size.width * fraction))
-                        .padding(4)
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.black.opacity(0.28))
+                    if fraction > 0 {
+                        RoundedRectangle(cornerRadius: 17, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: isCharging ? [.macFanCyan, .macFanMint] : [tint, .macFanVioletLight],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: max(8, (proxy.size.width - 8) * fraction), height: proxy.size.height - 8)
+                            .padding(4)
+                            .overlay {
+                                if isCharging && isActive && !reduceMotion {
+                                    BatteryChargingRibbon()
+                                        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                                        .frame(width: max(8, (proxy.size.width - 8) * fraction), height: proxy.size.height - 8)
+                                        .padding(4)
+                                }
+                            }
+                    }
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
                 }
             }
-            .frame(height: 110)
             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(Color.white.opacity(0.35))
-                .frame(width: 7, height: 34)
+                .fill(Color.white.opacity(0.34))
+                .frame(width: 8, height: 36)
         }
         .padding(.vertical, 7)
+        .onAppear { displayedPercent = percent }
+        .onChange(of: percent) { _, next in
+            if reduceMotion { displayedPercent = next }
+            else { withAnimation(.easeOut(duration: 0.34)) { displayedPercent = next } }
+        }
+    }
+}
+
+private struct BatteryChargingRibbon: View {
+    @State private var travels = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            LinearGradient(colors: [.clear, .white.opacity(0.34), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 52)
+                .offset(x: travels ? proxy.size.width + 20 : -72)
+                .onAppear {
+                    travels = false
+                    withAnimation(.linear(duration: 2.2).repeatForever(autoreverses: false)) { travels = true }
+                }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -1066,36 +1307,101 @@ private struct BatteryLevelTrail: View {
     var body: some View {
         Canvas(rendersAsynchronously: true) { context, size in
             guard values.count > 1 else { return }
-            let minValue = max(0, (values.min() ?? 0) - 2)
-            let maxValue = min(100, (values.max() ?? 100) + 2)
-            let span = max(1, maxValue - minValue)
+            let low = max(0, (values.min() ?? 0) - 1)
+            let high = min(100, (values.max() ?? 100) + 1)
+            let span = max(2, high - low)
             var path = Path()
             for (index, value) in values.enumerated() {
                 let x = size.width * CGFloat(index) / CGFloat(max(values.count - 1, 1))
-                let y = size.height * CGFloat(1 - (value - minValue) / span)
-                if index == 0 { path.move(to: CGPoint(x: x, y: y)) }
-                else { path.addLine(to: CGPoint(x: x, y: y)) }
+                let y = size.height * CGFloat(1 - (value - low) / span)
+                index == 0 ? path.move(to: CGPoint(x: x, y: y)) : path.addLine(to: CGPoint(x: x, y: y))
             }
-            context.stroke(path, with: .color(tint), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            context.stroke(path, with: .color(tint), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
         }
         .accessibilityHidden(true)
     }
 }
 
-private struct BatteryInsightMetric: View {
-    let title: String
-    let value: String
-    let detail: String
+private struct BatterySessionChart: View {
+    let points: [BatterySessionPoint]
     let tint: Color
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).macFanSectionLabel().foregroundStyle(Color.macFanMuted)
-            Text(value).macFanNumber(17, weight: .semibold).foregroundStyle(tint).contentTransition(.numericText())
-            Text(detail).macFanCaption().foregroundStyle(Color.macFanSecondary).lineLimit(1)
+    private var minimumPercent: Double { points.map(\.percent).min() ?? 0 }
+    private var maximumPercent: Double { points.map(\.percent).max() ?? 0 }
+    private var startLabel: String { points.first?.timestamp.formatted(date: .omitted, time: .shortened) ?? "—" }
+    private var endLabel: String { points.last?.timestamp.formatted(date: .omitted, time: .shortened) ?? "—" }
+    private var accessibilitySummary: String {
+        guard let first = points.first, let last = points.last else { return "Collecting samples" }
+        let change = last.percent - first.percent
+        let chargeSummary = String(
+            format: "From %.0f to %.0f percent, low %.0f, high %.0f, change %+.1f percent",
+            first.percent, last.percent, minimumPercent, maximumPercent, change
+        )
+        let duration = max(0, last.timestamp.timeIntervalSince(first.timestamp))
+        let durationSummary = duration < 60
+            ? "\(Int(duration.rounded())) seconds observed"
+            : "\(Int((duration / 60).rounded())) minutes observed"
+        let powerValues = points.compactMap(\.signedWatts)
+        guard let latestPower = powerValues.last,
+              let minimumPower = powerValues.min(),
+              let maximumPower = powerValues.max() else {
+            return "\(chargeSummary), \(durationSummary), battery power unavailable"
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
+        return "\(chargeSummary), \(durationSummary), latest power \(powerDescription(latestPower)), range \(powerDescription(minimumPower)) to \(powerDescription(maximumPower))"
+    }
+
+    private func powerDescription(_ watts: Double) -> String {
+        if abs(watts) < 0.05 { return "0 watts" }
+        return String(format: "%.1f watts %@", abs(watts), watts > 0 ? "into the battery" : "out of the battery")
+    }
+
+    var body: some View {
+        Canvas(rendersAsynchronously: true) { context, size in
+            guard points.count > 1, let first = points.first, let last = points.last else { return }
+            let elapsed = max(last.timestamp.timeIntervalSince(first.timestamp), 1)
+            let low = max(0, minimumPercent - 1)
+            let high = min(100, maximumPercent + 1)
+            let span = max(2, high - low)
+            let chargeHeight = size.height * 0.68
+            var line = Path()
+            for (index, point) in points.enumerated() {
+                let x = size.width * CGFloat(point.timestamp.timeIntervalSince(first.timestamp) / elapsed)
+                let y = chargeHeight * CGFloat(1 - (point.percent - low) / span)
+                index == 0 ? line.move(to: CGPoint(x: x, y: y)) : line.addLine(to: CGPoint(x: x, y: y))
+            }
+            context.stroke(line, with: .color(tint), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            let baseline = size.height * 0.84
+            var axis = Path(); axis.move(to: CGPoint(x: 0, y: baseline)); axis.addLine(to: CGPoint(x: size.width, y: baseline))
+            context.stroke(axis, with: .color(.white.opacity(0.09)), lineWidth: 0.5)
+            let maxPower = max(points.compactMap { $0.signedWatts.map(abs) }.max() ?? 1, 1)
+            for point in points {
+                guard let watts = point.signedWatts else { continue }
+                let x = size.width * CGFloat(point.timestamp.timeIntervalSince(first.timestamp) / elapsed)
+                let height = CGFloat(min(abs(watts) / maxPower, 1)) * size.height * 0.13
+                let rect = CGRect(x: x - 1, y: watts >= 0 ? baseline - height : baseline, width: 2, height: height)
+                context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(watts >= 0 ? .macFanMint : .macFanVioletLight))
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            HStack {
+                Text("Charge level")
+                Spacer()
+                Text("\(Int(minimumPercent.rounded(.down)))–\(Int(maximumPercent.rounded(.up)))%")
+            }
+            .macFanChartTick()
+            .foregroundStyle(Color.macFanMuted)
+        }
+        .overlay(alignment: .bottomLeading) {
+            HStack {
+                Text("Battery flow  + in / − out")
+                Spacer()
+                Text("\(startLabel)–\(endLabel)")
+            }
+            .macFanChartTick()
+            .foregroundStyle(Color.macFanMuted)
+        }
+        .accessibilityLabel("Visible-session battery charge and power flow chart")
+        .accessibilityValue(accessibilitySummary)
     }
 }
 
@@ -1104,10 +1410,23 @@ private struct BatteryTechnicalMetric: View {
     let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(title).macFanCaption().foregroundStyle(Color.macFanMuted)
-            Text(value).macFanNumber(14, weight: .medium).foregroundStyle(Color.macFanPrimary)
+            Text(value).macFanNumber(15, weight: .medium).foregroundStyle(Color.macFanPrimary).macFanLiveNumberTransition()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct BatteryEmptyState: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "battery.100").font(.system(size: 44, weight: .medium)).foregroundStyle(Color.macFanMuted)
+            Text("No battery data yet").macFanTitle2().foregroundStyle(Color.macFanPrimary)
+            Text("MacFan will show this workspace automatically when macOS reports internal-battery telemetry.")
+                .macFanCallout().foregroundStyle(Color.macFanSecondary)
+        }
+        .padding(22)
+        .macFanCard(padding: 0, radius: 16)
     }
 }

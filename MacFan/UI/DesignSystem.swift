@@ -343,7 +343,10 @@ struct MacFanPressableStyle: ButtonStyle {
             .offset(y: yOff)
             .brightness(bright)
             .opacity(isPressed ? 0.94 : 1)
-            .animation(reduceMotion ? nil : MacFanMetrics.springPress, value: isPressed)
+            .animation(
+                reduceMotion ? nil : (isPressed ? MacFanMetrics.springPress : MacFanMetrics.springRelease),
+                value: isPressed
+            )
     }
 }
 
@@ -356,7 +359,7 @@ struct MacFanEngagePulse: ViewModifier {
     let isActive: Bool
     var accent: Color = .macFanVioletLight
     var cornerRadius: CGFloat = 10
-    var maxScale: CGFloat = 1.5
+    var maxScale: CGFloat = 1.16
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var ringScale: CGFloat = 1
     @State private var ringOpacity: Double = 0
@@ -378,7 +381,7 @@ struct MacFanEngagePulse: ViewModifier {
                 // established "ping" pattern (see LiveDot.playArrivalPulse).
                 ringScale = 1
                 ringOpacity = 0.85
-                withAnimation(.easeOut(duration: 0.55)) {
+                withAnimation(.easeOut(duration: 0.26)) {
                     ringScale = maxScale
                     ringOpacity = 0
                 }
@@ -388,7 +391,7 @@ struct MacFanEngagePulse: ViewModifier {
 
 extension View {
     /// Play a one-shot accent ring when `isActive` becomes true.
-    func macFanEngagePulse(isActive: Bool, accent: Color, cornerRadius: CGFloat = 10, maxScale: CGFloat = 1.5) -> some View {
+    func macFanEngagePulse(isActive: Bool, accent: Color, cornerRadius: CGFloat = 10, maxScale: CGFloat = 1.16) -> some View {
         modifier(MacFanEngagePulse(isActive: isActive, accent: accent, cornerRadius: cornerRadius, maxScale: maxScale))
     }
 }

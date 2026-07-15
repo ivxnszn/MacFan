@@ -2,7 +2,7 @@
 
 MacFan is a local-first macOS menu-bar app for understanding and managing thermal behavior. It combines a quiet CPU temperature monitor, rich history, useful explanations, and best-effort fan control in one compact interface.
 
-Current release: **0.1.1** · See the [changelog](CHANGELOG.md) for what changed.
+Current release: **0.1.2** · See the [changelog](CHANGELOG.md) for what changed.
 
 ![MacFan overview](docs/screenshots/overview.jpeg)
 
