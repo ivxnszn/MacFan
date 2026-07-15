@@ -679,7 +679,7 @@ struct OverviewContextStrip: View, Equatable {
                     let pressure = usage?.thermalStateRaw ?? 0
                     let pColor: Color = pressure >= 2 ? .macFanCoral : pressure == 1 ? .macFanAmberLight : .macFanMint
                     Circle().fill(pColor).frame(width: 7, height: 7)
-                    Text("\(snapshot.sensors.count)s · \(snapshot.fans.count)f")
+                    Text("\(snapshot.sensors.count) sensors · \(snapshot.fans.count) fans")
                         .macFanChartTick()
                         .foregroundStyle(Color.macFanSecondary)
                     if let u = usage, u.uptime > 3600 {

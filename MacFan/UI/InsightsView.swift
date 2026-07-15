@@ -62,7 +62,8 @@ struct InsightsView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 2)
         }
-        .task {
+        .task(id: model.isDashboardVisible) {
+            guard model.isDashboardVisible else { return }
             await refresh()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))

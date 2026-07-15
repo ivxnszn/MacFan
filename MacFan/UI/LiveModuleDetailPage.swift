@@ -9,12 +9,16 @@ struct LiveModuleDetailPage: View, Equatable {
     let snapshot: ThermalSnapshot
     let history: [TelemetrySample]
     let usage: SystemUsage?
+    let isActive: Bool
     let temperatureUnit: TemperatureUnit
     let onClose: () -> Void
     let onRevealSample: (TelemetrySample?) -> Void
 
     @State private var inspectedDate: Date? = nil
+    @StateObject private var liveSession = SystemUsageViewModel()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var currentUsage: SystemUsage? { liveSession.usage ?? usage }
 
     // For live modules without persistent history we use short derived trails when available.
     // Processor temp benefits most from main history alignment.
@@ -25,21 +29,21 @@ struct LiveModuleDetailPage: View, Equatable {
     private var currentValueText: String {
         switch module {
         case .processorLoad:
-            guard let u = usage else { return "—" }
+            guard let u = currentUsage else { return "—" }
             return String(format: "%.1f", u.cpuTotalPercent)
         case .memory:
-            guard let u = usage else { return "—" }
+            guard let u = currentUsage else { return "—" }
             return String(format: "%.1f", u.memoryPercent)
         case .processorTemp:
             guard let c = snapshot.displayTemperature?.celsius else { return "—" }
             return "\(Int(temperatureUnit.convert(c).rounded()))"
         case .network:
-            let d = usage?.networkReceivedKBps ?? 0
-            let u = usage?.networkSentKBps ?? 0
+            let d = currentUsage?.networkReceivedKBps ?? 0
+            let u = currentUsage?.networkSentKBps ?? 0
             let kbps = d + u
             return kbps >= 1024 ? String(format: "%.1f", kbps / 1024) : "\(Int(kbps.rounded()))"
         case .disk:
-            guard let u = usage else { return "—" }
+            guard let u = currentUsage else { return "—" }
             return String(format: "%.1f", u.diskPercent)
         }
     }
@@ -48,7 +52,7 @@ struct LiveModuleDetailPage: View, Equatable {
         switch module {
         case .processorLoad, .memory, .disk: "%"
         case .processorTemp: "°"
-        case .network: ( (usage?.networkReceivedKBps ?? 0) + (usage?.networkSentKBps ?? 0) ) >= 1024 ? " MB/s" : " kb/s"
+        case .network: ((currentUsage?.networkReceivedKBps ?? 0) + (currentUsage?.networkSentKBps ?? 0)) >= 1024 ? " MB/s" : " kb/s"
         }
     }
 
@@ -74,6 +78,11 @@ struct LiveModuleDetailPage: View, Equatable {
         }
         .padding(.vertical, 4)
         .onChange(of: module) { _, _ in inspectedDate = nil }
+        .onExitCommand(perform: close)
+        .task(id: isActive) {
+            guard isActive else { return }
+            await liveSession.run(pollEvery: .seconds(2))
+        }
     }
 
     // MARK: - Header (page-like navigation)
@@ -81,9 +90,7 @@ struct LiveModuleDetailPage: View, Equatable {
     private var detailHeader: some View {
         HStack(alignment: .center, spacing: 12) {
             Button {
-                withAnimation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.86)) {
-                    onClose()
-                }
+                close()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.left")
@@ -111,7 +118,7 @@ struct LiveModuleDetailPage: View, Equatable {
             Spacer()
 
             Button {
-                onClose()
+                close()
             } label: {
                 Image(systemName: "xmark")
                     .macFanHeadline()
@@ -120,6 +127,7 @@ struct LiveModuleDetailPage: View, Equatable {
             }
             .buttonStyle(MacFanPressableStyle())
             .help("Close detail view")
+            .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 4)
     }
@@ -163,8 +171,8 @@ struct LiveModuleDetailPage: View, Equatable {
 
     private var liveContextLabel: String {
         switch module {
-        case .processorLoad: usage.map { "\($0.thermalStateTitle) · \(Int($0.cpuTotalPercent))% total" } ?? "Sampling"
-        case .memory: "Pressure · \(usage.map { Int($0.memoryPercent) } ?? 0)%"
+        case .processorLoad: currentUsage.map { "\($0.thermalStateTitle) · \(Int($0.cpuTotalPercent))% total" } ?? "Sampling"
+        case .memory: "Pressure · \(currentUsage.map { Int($0.memoryPercent) } ?? 0)%"
         case .processorTemp: ThermalPalette.band(for: snapshot.displayTemperature?.celsius).label
         case .network: "All interfaces"
         case .disk: "Root volume"
@@ -174,7 +182,7 @@ struct LiveModuleDetailPage: View, Equatable {
     private var contextTint: Color {
         switch module {
         case .processorTemp: ThermalPalette.band(for: snapshot.displayTemperature?.celsius).color
-        case .processorLoad, .memory: (usage?.thermalStateRaw ?? 0) >= 2 ? .macFanCoral : .macFanMint
+        case .processorLoad, .memory: (currentUsage?.thermalStateRaw ?? 0) >= 2 ? .macFanCoral : .macFanMint
         default: .macFanVioletLight
         }
     }
@@ -215,13 +223,13 @@ struct LiveModuleDetailPage: View, Equatable {
         let now = Date.now
         switch module {
         case .processorLoad:
-            if let u = usage {
+            if let u = currentUsage {
                 result.append(SessionStat(label: "CURRENT", value: "\(String(format: "%.1f", u.cpuTotalPercent))%", note: "\(u.perCorePercent.count) cores", timestamp: now))
                 // Real avg requires longer accumulation; keep honest
                 result.append(SessionStat(label: "LOAD", value: "\(Int(u.cpuTotalPercent))%", note: "live total"))
             }
         case .memory:
-            if let u = usage {
+            if let u = currentUsage {
                 result.append(SessionStat(label: "USED", value: "\(SystemUsageView.gigabytes(u.memoryUsedBytes))", note: "of \(SystemUsageView.gigabytes(u.memoryTotalBytes))", timestamp: now))
                 result.append(SessionStat(label: "SWAP", value: u.swapUsedBytes > 0 ? "\(Int(u.swapUsedBytes / 1_048_576)) MB" : "0", note: nil, timestamp: now))
             }
@@ -244,10 +252,10 @@ struct LiveModuleDetailPage: View, Equatable {
                 result.append(SessionStat(label: "MAX", value: "\(maxT)°", note: "in range", timestamp: maxTs))
             }
         case .network:
-            let total = ((usage?.networkReceivedKBps ?? 0) + (usage?.networkSentKBps ?? 0))
+            let total = ((currentUsage?.networkReceivedKBps ?? 0) + (currentUsage?.networkSentKBps ?? 0))
             result.append(SessionStat(label: "CURRENT", value: "\(Int(total)) kb/s", note: "↓↑ combined", timestamp: now))
         case .disk:
-            if let u = usage, u.diskTotalBytes > 0 {
+            if let u = currentUsage, u.diskTotalBytes > 0 {
                 result.append(SessionStat(label: "USED", value: "\(SystemUsageView.gigabytes(u.diskUsedBytes))", note: "/ \(SystemUsageView.gigabytes(u.diskTotalBytes))", timestamp: now))
             }
         }
@@ -279,12 +287,16 @@ struct LiveModuleDetailPage: View, Equatable {
                 inspectedDate: $inspectedDate
             )
             .frame(height: 168)
-            .macFanCard(padding: 12, radius: MacFanMetrics.radiusL, flatten: false)
+            .macFanCard(padding: 12, radius: MacFanMetrics.radiusL, flatten: true)
 
             if let inspectedDate {
                 concurrentContextPill(for: inspectedDate)
             }
         }
+    }
+
+    private func close() {
+        onClose()
     }
 
     private var primaryChartTitle: String {
@@ -335,13 +347,13 @@ struct LiveModuleDetailPage: View, Equatable {
                     Text("High sustained load while temperature is elevated can indicate thermal throttling risk. Per-core distribution is visible in the mini bars above.")
                         .macFanCallout()
                         .foregroundStyle(Color.macFanSecondary)
-                    if let cores = usage?.perCorePercent, !cores.isEmpty {
+                    if let cores = currentUsage?.perCorePercent, !cores.isEmpty {
                         Text("Cores: \(cores.map { String(format: "%.0f", $0) }.joined(separator: " / "))%")
                             .macFanNumber(12)
                             .foregroundStyle(Color.macFanMuted)
                     }
                 case .memory:
-                    let swap = usage?.swapUsedBytes ?? 0
+                    let swap = currentUsage?.swapUsedBytes ?? 0
                     Text(swap > 0 ? "Swap activity present — can correlate with sustained high temperature under memory pressure." : "No swap pressure observed in current sample.")
                         .macFanCallout()
                         .foregroundStyle(Color.macFanSecondary)
@@ -389,6 +401,7 @@ struct LiveModuleDetailPage: View, Equatable {
         lhs.snapshot.isVisuallyEquivalent(to: rhs.snapshot) &&
         lhs.history.count == rhs.history.count &&
         lhs.usage == rhs.usage &&
+        lhs.isActive == rhs.isActive &&
         lhs.temperatureUnit == rhs.temperatureUnit
     }
 }
@@ -530,7 +543,10 @@ struct ModuleTrendCanvas: View, Equatable {
                             let frac = max(0, min(1, (loc.x - 14) / (geo.size.width - 28)))
                             let count = max(history.count, 1)
                             let idx = Int(frac * Double(count - 1))
-                            if idx >= 0 && idx < history.count { inspectedDate = history[idx].timestamp }
+                            if idx >= 0 && idx < history.count {
+                                let next = history[idx].timestamp
+                                if inspectedDate != next { inspectedDate = next }
+                            }
                         case .ended: break
                         }
                     }
@@ -538,7 +554,10 @@ struct ModuleTrendCanvas: View, Equatable {
                         let frac = max(0, min(1, (v.location.x - 14) / (geo.size.width - 28)))
                         let count = max(history.count, 1)
                         let idx = Int(frac * Double(count - 1))
-                        if idx >= 0 && idx < history.count { inspectedDate = history[idx].timestamp }
+                        if idx >= 0 && idx < history.count {
+                            let next = history[idx].timestamp
+                            if inspectedDate != next { inspectedDate = next }
+                        }
                     })
             }
         )

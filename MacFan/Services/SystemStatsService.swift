@@ -3,6 +3,65 @@ import Foundation
 import IOKit
 import IOKit.ps
 
+enum BatteryFlowState: String, Sendable, Equatable {
+    case charging
+    case discharging
+    case connectedIdle
+    case unknown
+
+    var title: String {
+        switch self {
+        case .charging: "Charging"
+        case .discharging: "On battery"
+        case .connectedIdle: "Connected, not charging"
+        case .unknown: "Battery state unavailable"
+        }
+    }
+}
+
+enum BatteryTelemetryRules {
+    static func validMinutes(_ value: Int?) -> Int? {
+        guard let value, value > 0, value <= 48 * 60 else { return nil }
+        return value
+    }
+
+    static func flowState(charging: Bool, onExternalPower: Bool?) -> BatteryFlowState {
+        if charging { return .charging }
+        guard let onExternalPower else { return .unknown }
+        return onExternalPower ? .connectedIdle : .discharging
+    }
+
+    static func signedWatts(_ watts: Double?, state: BatteryFlowState) -> Double? {
+        guard let watts, watts.isFinite, watts >= 0 else { return nil }
+        switch state {
+        case .charging: return watts
+        case .discharging: return -watts
+        // A non-trivial current while macOS says the battery is idle is
+        // contradictory telemetry (often a stale current sample). Do not turn
+        // it into a confident 0 W reading.
+        case .connectedIdle: return watts < 0.25 ? 0 : nil
+        case .unknown: return nil
+        }
+    }
+
+    static func remainingMinutes(
+        state: BatteryFlowState,
+        timeToFull: Int?,
+        timeToEmpty: Int?
+    ) -> Int? {
+        switch state {
+        case .charging: return validMinutes(timeToFull)
+        case .discharging: return validMinutes(timeToEmpty)
+        case .connectedIdle, .unknown: return nil
+        }
+    }
+
+    static func healthPercent(nominalCapacity: Int?, designCapacity: Int?) -> Double? {
+        guard let nominalCapacity, let designCapacity, nominalCapacity >= 0, designCapacity > 0 else { return nil }
+        return min(100, max(0, Double(nominalCapacity) / Double(designCapacity) * 100))
+    }
+}
+
 struct SystemUsage: Sendable, Equatable {
     var cpuTotalPercent: Double
     var perCorePercent: [Double]
@@ -16,11 +75,22 @@ struct SystemUsage: Sendable, Equatable {
     var thermalStateRaw: Int = 0
     var batteryPercent: Double?
     var batteryCharging: Bool?
+    /// Distinguishes charging, battery use, and an adapter connected while the
+    /// battery is full/idle. `batteryCharging` alone cannot make that distinction.
+    var batteryFlowState: BatteryFlowState = .unknown
+    var batteryOnExternalPower: Bool?
+    /// Timestamp of the underlying battery hardware read. Cached values retain
+    /// this timestamp so UI history never records the same sample repeatedly.
+    var batterySampledAt: Date?
     var batteryMinutesRemaining: Int?
     /// Power in watts (positive value). Computed as |current(mA)| × voltage(mV) / 1_000_000
     /// from IOPS ("Current") + AppleSmartBattery/SMC ("Voltage", "AppleRawBatteryVoltage", "Amperage").
     /// Especially accurate and prominent for charging power (W).
     var batteryWatts: Double?
+    /// Signed cell-side flow: positive into the battery, negative out of it,
+    /// approximately zero while connected and truly idle. This is not
+    /// wall/adapter consumption; contradictory/stale readings stay nil.
+    var batterySignedWatts: Double?
     /// Battery health as percentage of design capacity (if available).
     var batteryHealthPercent: Double?
     var batteryCycleCount: Int?
@@ -253,7 +323,7 @@ actor SystemUsageSampler {
     private var previousNetworkTotals: (received: UInt64, sent: UInt64, at: Date)?
     private var cachedGPU: Double?
     private var lastGPURead = Date.distantPast
-    private var cachedBattery: (percent: Double, charging: Bool, minutesRemaining: Int?, watts: Double?, healthPercent: Double?, cycleCount: Int?, adapterWatts: Double?, tempC: Double?, currentMA: Double?, voltageMV: Double?)?
+    private var cachedBattery: (percent: Double, charging: Bool, flowState: BatteryFlowState, onExternalPower: Bool?, sampledAt: Date, minutesRemaining: Int?, watts: Double?, signedWatts: Double?, healthPercent: Double?, cycleCount: Int?, adapterWatts: Double?, tempC: Double?, currentMA: Double?, voltageMV: Double?)?
     private var lastBatteryRead = Date.distantPast
     private var cachedDisk: (used: UInt64, total: UInt64) = (0, 0)
     private var lastDiskRead = Date.distantPast
@@ -316,8 +386,12 @@ actor SystemUsageSampler {
             thermalStateRaw: ProcessInfo.processInfo.thermalState.rawValue,
             batteryPercent: cachedBattery?.percent,
             batteryCharging: cachedBattery?.charging,
+            batteryFlowState: cachedBattery?.flowState ?? .unknown,
+            batteryOnExternalPower: cachedBattery?.onExternalPower,
+            batterySampledAt: cachedBattery?.sampledAt,
             batteryMinutesRemaining: cachedBattery?.minutesRemaining,
             batteryWatts: cachedBattery?.watts,
+            batterySignedWatts: cachedBattery?.signedWatts,
             batteryHealthPercent: cachedBattery?.healthPercent,
             batteryCycleCount: cachedBattery?.cycleCount,
             batteryAdapterWatts: cachedBattery?.adapterWatts,
@@ -336,16 +410,18 @@ actor SystemUsageSampler {
     /// Power (W) = |current(mA)| × voltage(mV) / 1_000_000. Prioritizes IOPS "Current" + registry/SMC
     /// "Voltage"/"AppleRawBatteryVoltage" (or IOPS "Voltage"). Falls back to Amperage (SMC). Always abs
     /// so watts positive; emphasized for charging scenarios.
-    private func readBattery() -> (percent: Double, charging: Bool, minutesRemaining: Int?, watts: Double?, healthPercent: Double?, cycleCount: Int?, adapterWatts: Double?, tempC: Double?, currentMA: Double?, voltageMV: Double?)? {
+    private func readBattery() -> (percent: Double, charging: Bool, flowState: BatteryFlowState, onExternalPower: Bool?, sampledAt: Date, minutesRemaining: Int?, watts: Double?, signedWatts: Double?, healthPercent: Double?, cycleCount: Int?, adapterWatts: Double?, tempC: Double?, currentMA: Double?, voltageMV: Double?)? {
         guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
 
         var percent: Double?
         var charging = false
+        var onExternalPower: Bool?
         var minutes: Int?
+        var timeToFull: Int?
+        var timeToEmpty: Int?
         var currentMA: Double?
         var voltageFromIOPS: Double?
-        var iopsHealth: String?
         var designCycles: Int?
 
         for source in sources {
@@ -357,6 +433,10 @@ actor SystemUsageSampler {
                 percent = Double(cur) / Double(maxc) * 100
             }
             charging = (description[kIOPSIsChargingKey] as? Bool) ?? false
+            if let powerSourceState = description[kIOPSPowerSourceStateKey] as? String {
+                if powerSourceState == kIOPSACPowerValue { onExternalPower = true }
+                else if powerSourceState == kIOPSBatteryPowerValue { onExternalPower = false }
+            }
             if let curNum = description["Current"] as? NSNumber {
                 currentMA = curNum.doubleValue
             }
@@ -365,14 +445,19 @@ actor SystemUsageSampler {
             } else if let v = description["Voltage"] as? Int {
                 voltageFromIOPS = Double(v)
             }
-            let rawMinutes = description[charging ? kIOPSTimeToFullChargeKey : kIOPSTimeToEmptyKey] as? Int
-            minutes = (rawMinutes ?? -1) > 0 ? rawMinutes : nil
-            iopsHealth = description["BatteryHealth"] as? String
+            timeToFull = description[kIOPSTimeToFullChargeKey] as? Int
+            timeToEmpty = description[kIOPSTimeToEmptyKey] as? Int
             designCycles = description["DesignCycleCount"] as? Int
             break
         }
 
         guard percent != nil else { return nil }
+        let flowState = BatteryTelemetryRules.flowState(charging: charging, onExternalPower: onExternalPower)
+        minutes = BatteryTelemetryRules.remainingMinutes(
+            state: flowState,
+            timeToFull: timeToFull,
+            timeToEmpty: timeToEmpty
+        )
 
         // Rich data via AppleSmartBattery registry entry (SMC data). Keys: Voltage, AppleRaw*, Amperage, etc.
         var cycleCount: Int?
@@ -428,20 +513,16 @@ actor SystemUsageSampler {
 
         // Compute watts from IOPS or SMC sources: |mA| * mV / 1e6 . Positive always.
         var watts: Double?
+        var signedWatts: Double?
         if let ma = currentMA, let mv = voltageMV, mv > 0 {
             watts = abs(ma) * mv / 1_000_000.0
         }
 
-        // Health: prefer Nominal/Design from registry (full charge capacity vs design). Fallback to IOPS max or 100.
-        var healthPercent: Double?
-        if let nom = nomCap, let des = desCap, des > 0 {
-            healthPercent = min(100.0, max(0.0, Double(nom) / Double(des) * 100.0))
-        } else if let hstr = iopsHealth, hstr.lowercased().contains("good") {
-            healthPercent = 100.0
-        } else if percent != nil {
-            // IOPS Max Capacity often reflects health % already on some firmwares
-            healthPercent = percent
-        }
+        signedWatts = BatteryTelemetryRules.signedWatts(watts, state: flowState)
+
+        // Health is only shown when it is backed by actual capacity data or an
+        // explicit OS condition. Charge percentage is never a health proxy.
+        let healthPercent = BatteryTelemetryRules.healthPercent(nominalCapacity: nomCap, designCapacity: desCap)
 
         // Adapter details (only present when AC/external connected). Provides direct Watts.
         var adapterWatts: Double?
@@ -452,7 +533,11 @@ actor SystemUsageSampler {
         }
 
         let usedCycles = cycleCount ?? designCycles
-        return (percent!, charging, minutes, watts, healthPercent, usedCycles, adapterWatts, tempC, currentMA, voltageMV)
+        return (
+            percent!, charging, flowState, onExternalPower, .now, minutes,
+            watts, signedWatts, healthPercent, usedCycles, adapterWatts,
+            tempC, currentMA, voltageMV
+        )
     }
 
     /// Byte counters summed over non-loopback link-layer interfaces; rates are

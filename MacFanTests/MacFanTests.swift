@@ -178,6 +178,77 @@ final class MacFanTests: XCTestCase {
     }
 }
 
+final class BatteryTelemetryRulesTests: XCTestCase {
+    func testPowerSourceStateDistinguishesAdapterIdle() {
+        XCTAssertEqual(BatteryTelemetryRules.flowState(charging: true, onExternalPower: true), .charging)
+        XCTAssertEqual(BatteryTelemetryRules.flowState(charging: false, onExternalPower: true), .connectedIdle)
+        XCTAssertEqual(BatteryTelemetryRules.flowState(charging: false, onExternalPower: false), .discharging)
+        XCTAssertEqual(BatteryTelemetryRules.flowState(charging: false, onExternalPower: nil), .unknown)
+    }
+
+    func testSignedBatteryFlowUsesSemanticDirection() {
+        XCTAssertEqual(BatteryTelemetryRules.signedWatts(42.5, state: .charging), 42.5)
+        XCTAssertEqual(BatteryTelemetryRules.signedWatts(12, state: .discharging), -12)
+        XCTAssertEqual(BatteryTelemetryRules.signedWatts(0.1, state: .connectedIdle), 0)
+        XCTAssertNil(BatteryTelemetryRules.signedWatts(3, state: .connectedIdle))
+        XCTAssertNil(BatteryTelemetryRules.signedWatts(3, state: .unknown))
+    }
+
+    func testBatteryTimeRejectsSentinelsAndUnreasonableValues() {
+        XCTAssertNil(BatteryTelemetryRules.validMinutes(nil))
+        XCTAssertNil(BatteryTelemetryRules.validMinutes(-1))
+        XCTAssertNil(BatteryTelemetryRules.validMinutes(0))
+        XCTAssertNil(BatteryTelemetryRules.validMinutes(48 * 60 + 1))
+        XCTAssertEqual(BatteryTelemetryRules.validMinutes(96), 96)
+    }
+
+    func testBatteryTimeMatchesTheConfirmedEnergyDirection() {
+        XCTAssertEqual(BatteryTelemetryRules.remainingMinutes(state: .charging, timeToFull: 45, timeToEmpty: 300), 45)
+        XCTAssertEqual(BatteryTelemetryRules.remainingMinutes(state: .discharging, timeToFull: 45, timeToEmpty: 300), 300)
+        XCTAssertNil(BatteryTelemetryRules.remainingMinutes(state: .connectedIdle, timeToFull: 45, timeToEmpty: 300))
+        XCTAssertNil(BatteryTelemetryRules.remainingMinutes(state: .unknown, timeToFull: 45, timeToEmpty: 300))
+    }
+
+    func testHealthRequiresRealCapacityData() {
+        XCTAssertNil(BatteryTelemetryRules.healthPercent(nominalCapacity: nil, designCapacity: nil))
+        XCTAssertNil(BatteryTelemetryRules.healthPercent(nominalCapacity: 5_000, designCapacity: 0))
+        XCTAssertEqual(
+            BatteryTelemetryRules.healthPercent(nominalCapacity: 5_400, designCapacity: 6_000) ?? -1,
+            90,
+            accuracy: 0.001
+        )
+    }
+}
+
+final class BatterySessionRulesTests: XCTestCase {
+    private let base = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func point(offset: TimeInterval, state: BatteryFlowState = .charging) -> BatterySessionPoint {
+        BatterySessionPoint(
+            timestamp: base.addingTimeInterval(offset),
+            percent: 50,
+            signedWatts: state == .charging ? 20 : -10,
+            flowState: state,
+            temperatureCelsius: 31
+        )
+    }
+
+    func testContinuousSamplesStayInOneSegment() {
+        XCTAssertFalse(BatterySessionRules.shouldStartNewSegment(previous: point(offset: 0), next: point(offset: 5)))
+    }
+
+    func testHiddenWindowGapStartsANewSegment() {
+        XCTAssertTrue(BatterySessionRules.shouldStartNewSegment(previous: point(offset: 0), next: point(offset: 20)))
+    }
+
+    func testEnergyDirectionChangeStartsANewSegment() {
+        XCTAssertTrue(BatterySessionRules.shouldStartNewSegment(
+            previous: point(offset: 0, state: .charging),
+            next: point(offset: 5, state: .discharging)
+        ))
+    }
+}
+
 final class DashboardChartDataTests: XCTestCase {
     private let base = Date(timeIntervalSince1970: 1_700_000_000)
 

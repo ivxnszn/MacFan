@@ -1,12 +1,30 @@
 import SwiftUI
 
+private struct PopoverVitals: Equatable {
+    let cpuPercent: Int
+    let memoryPercent: Int
+    let gpuPercent: Int?
+    let batteryPercent: Int?
+    let flowState: BatteryFlowState
+    let thermalStateRaw: Int
+
+    init(_ usage: SystemUsage) {
+        cpuPercent = Int(usage.cpuTotalPercent.rounded())
+        memoryPercent = Int(usage.memoryPercent.rounded())
+        gpuPercent = usage.gpuPercent.map { Int($0.rounded()) }
+        batteryPercent = usage.batteryPercent.map { Int($0.rounded()) }
+        flowState = usage.batteryFlowState
+        thermalStateRaw = usage.thermalStateRaw
+    }
+}
+
 /// The menu-bar surface is deliberately a quiet instrument: one thermal
 /// story, immediate cooling actions, and optional engineering detail.
 struct PopoverView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let onShowDashboard: () -> Void
+    let onShowDashboard: (DashboardTab?) -> Void
     let onShowSettings: () -> Void
     let onQuit: () -> Void
 
@@ -14,7 +32,7 @@ struct PopoverView: View {
     @State private var showsFanDetails = false
     // Host load is sampled only while the popover is on screen — the .task
     // below is cancelled the moment it closes, so nothing polls in the menu bar.
-    @State private var usage: SystemUsage?
+    @State private var vitals: PopoverVitals?
     private let usageSampler = SystemUsageSampler()
 
     private var temperature: Double? { model.snapshot.displayTemperature?.celsius }
@@ -58,20 +76,22 @@ struct PopoverView: View {
                     .frame(height: 44)
             }
 
-            if let toast = model.toast {
-                Text(toast)
-                    .macFanCallout()
-                    // raw weight cleaned per plan (no chaining on tokens)
-                    .foregroundStyle(Color.macFanPrimary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 8)
-                    .background(Color.macFanRaised, in: Capsule())
-                    .overlay { Capsule().stroke(Color.macFanStroke, lineWidth: 0.5) }
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 52)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            ZStack {
+                if let toast = model.toast {
+                    Text(toast)
+                        .macFanCallout()
+                        .foregroundStyle(Color.macFanPrimary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 8)
+                        .background(Color.macFanRaised, in: Capsule())
+                        .overlay { Capsule().stroke(Color.macFanStroke, lineWidth: 0.5) }
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 52)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.17), value: model.toast)
         }
         .frame(width: 388, height: 520)
         .overlay {
@@ -80,17 +100,17 @@ struct PopoverView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .preferredColorScheme(.dark)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.17), value: model.toast)
         .task {
             // Prime with a real CPU delta (~160 ms) so the pulse settles in a
             // beat after the temp hero, reading as "vitals coming online".
             let first = await usageSampler.primedSample()
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) { usage = first }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { vitals = PopoverVitals(first) }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled else { return }
                 let next = await usageSampler.sample()
-                if next != usage { usage = next }
+                let nextVitals = PopoverVitals(next)
+                if nextVitals != vitals { vitals = nextVitals }
             }
         }
     }
@@ -103,9 +123,9 @@ struct PopoverView: View {
     private enum PowerVerdict: Equatable {
         case cool, steady, hard, pressure
 
-        static func evaluate(usage: SystemUsage, band: ThermalBand) -> PowerVerdict {
-            if usage.thermalStateRaw >= 2 || band == .hot { return .pressure }
-            let load = max(usage.cpuTotalPercent, usage.gpuPercent ?? 0)
+        static func evaluate(vitals: PopoverVitals, band: ThermalBand) -> PowerVerdict {
+            if vitals.thermalStateRaw >= 2 || band == .hot { return .pressure }
+            let load = max(vitals.cpuPercent, vitals.gpuPercent ?? 0)
             if load >= 65 || band == .amber { return .hard }
             if load >= 25 { return .steady }
             return .cool
@@ -146,64 +166,92 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var systemPulse: some View {
-        if let usage {
-            let v = PowerVerdict.evaluate(usage: usage, band: band)
-            HStack(spacing: 11) {
-                Image(systemName: v.icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(v.color)
-                    .frame(width: 30, height: 30)
-                    .background(v.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .symbolEffect(.bounce, options: .nonRepeating, value: v)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(v.label)
-                        .macFanSubhead()
-                        .foregroundStyle(Color.macFanPrimary)
-                    Text(v.detail)
-                        .macFanCallout()
-                        .foregroundStyle(Color.macFanSecondary)
-                        .lineLimit(1)
+        if let vitals {
+            let verdict = PowerVerdict.evaluate(vitals: vitals, band: band)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 5) {
+                    verdictCell(verdict)
+                        .fixedSize(horizontal: true, vertical: false)
+                    vitalsRow(vitals, expands: false)
                 }
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 5) {
-                    loadBar("CPU", usage.cpuTotalPercent, tint: .macFanBlue)
-                    if let gpu = usage.gpuPercent {
-                        loadBar("GPU", gpu, tint: .macFanCyan)
-                    } else {
-                        loadBar("MEM", usage.memoryPercent, tint: .macFanIndigo)
-                    }
+                VStack(spacing: 5) {
+                    verdictCell(verdict)
+                    vitalsRow(vitals, expands: true)
                 }
-                .frame(width: 94)
             }
-            .padding(.horizontal, 11)
-            .frame(minHeight: 50)
-            .background(v.color.opacity(0.06), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(v.color.opacity(0.18), lineWidth: 0.5) }
-            .animation(reduceMotion ? nil : MacFanMetrics.springFast, value: v)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(minHeight: 56)
+            .background(verdict.color.opacity(0.05), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(verdict.color.opacity(0.16), lineWidth: 0.5) }
+            .animation(reduceMotion ? nil : MacFanMetrics.springFast, value: verdict)
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(v.label). CPU \(Int(usage.cpuTotalPercent.rounded())) percent.")
         }
     }
 
-    private func loadBar(_ label: String, _ value: Double, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Text(label)
-                .font(.system(size: 8.5, weight: .semibold))
-                .foregroundStyle(Color.macFanMuted)
-                .frame(width: 22, alignment: .leading)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.07)).frame(width: 36, height: 3)
-                Capsule().fill(tint).frame(width: 36 * min(max(value / 100, 0), 1), height: 3)
+    private func verdictCell(_ verdict: PowerVerdict) -> some View {
+        Button { onShowDashboard(.system) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: verdict.icon)
+                    .macFanSubhead()
+                    .foregroundStyle(verdict.color)
+                    .frame(width: 28, height: 28)
+                    .background(verdict.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verdict.label).macFanSubhead().foregroundStyle(Color.macFanPrimary)
+                    Text(verdict.detail).macFanCaption().foregroundStyle(Color.macFanSecondary).lineLimit(1)
+                }
             }
-            Text("\(Int(value.rounded()))")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Color.macFanSecondary)
-                .frame(width: 18, alignment: .trailing)
-                .macFanLiveNumberTransition()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: value)
+        .buttonStyle(MacFanPressableStyle())
+        .help("Open live System metrics")
+    }
+
+    private func vitalsRow(_ vitals: PopoverVitals, expands: Bool) -> some View {
+        HStack(spacing: 5) {
+            vitalCell(label: "CPU", value: "\(vitals.cpuPercent)%", fraction: Double(vitals.cpuPercent) / 100, tint: .macFanBlue, destination: .system, expands: expands)
+            if let gpu = vitals.gpuPercent {
+                vitalCell(label: "GPU", value: "\(gpu)%", fraction: Double(gpu) / 100, tint: .macFanCyan, destination: .system, expands: expands)
+            } else {
+                vitalCell(label: "MEM", value: "\(vitals.memoryPercent)%", fraction: Double(vitals.memoryPercent) / 100, tint: .macFanIndigo, destination: .system, expands: expands)
+            }
+            if let battery = vitals.batteryPercent {
+                vitalCell(
+                    label: vitals.flowState == .charging ? "CHARGE" : "BATT",
+                    value: "\(battery)%",
+                    fraction: Double(battery) / 100,
+                    tint: vitals.flowState == .charging ? .macFanMint : .macFanVioletLight,
+                    destination: .battery,
+                    expands: expands
+                )
+            }
+        }
+        .frame(maxWidth: expands ? .infinity : nil)
+    }
+
+    private func vitalCell(label: String, value: String, fraction: Double, tint: Color, destination: DashboardTab, expands: Bool) -> some View {
+        Button { onShowDashboard(destination) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).macFanChartTick().foregroundStyle(Color.macFanMuted)
+                Text(value).macFanNumber(12, weight: .semibold).foregroundStyle(Color.macFanPrimary).macFanLiveNumberTransition()
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.07))
+                        Capsule().fill(tint).frame(width: proxy.size.width * min(max(fraction, 0), 1))
+                    }
+                }
+                .frame(height: 2.5)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 6)
+            .frame(minWidth: 55, maxWidth: expands ? .infinity : 55, minHeight: 44, maxHeight: 44, alignment: .leading)
+            .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MacFanPressableStyle(pressedScale: 0.97))
+        .help("Open \(destination.rawValue)")
     }
 
     private var header: some View {
@@ -373,10 +421,9 @@ struct PopoverView: View {
                                 Image(systemName: modeIcon(mode))
                                     .macFanCaption() // weight via token; SF Symbol tuned size ok with comment if needed
                                     .foregroundStyle(isSelected(mode) ? mode.uiAccent : Color.macFanSecondary)
-                                    .symbolEffect(.bounce, options: .nonRepeating, value: isSelected(mode) && !reduceMotion)
                             }
                             .frame(width: 28, height: 24)
-                            .macFanEngagePulse(isActive: isSelected(mode), accent: mode.uiAccent, cornerRadius: 8, maxScale: 1.7)
+                            .macFanEngagePulse(isActive: isSelected(mode), accent: mode.uiAccent, cornerRadius: 8, maxScale: 1.14)
                             Text(mode.uiTitle)
                                 .macFanCaption()
                                 // fontWeight removed; rely on macFan* token weights
@@ -555,7 +602,7 @@ struct PopoverView: View {
                 .foregroundStyle(Color.macFanSecondary)
                 .lineLimit(1)
             Spacer()
-            Button(action: onShowDashboard) {
+            Button(action: { onShowDashboard(nil) }) {
                 Label("Dashboard", systemImage: "rectangle.grid.2x2")
                     .macFanLabel(tracking: 0.3)
                     .padding(.horizontal, 9)
@@ -655,7 +702,7 @@ struct PopoverView: View {
     }
 
     private func activate(_ mode: FanMode) {
-        if mode == .expert, !model.isExpertUnlocked { onShowDashboard() }
+        if mode == .expert, !model.isExpertUnlocked { onShowDashboard(nil) }
         else { model.activate(mode) }
     }
 }

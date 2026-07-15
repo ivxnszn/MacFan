@@ -6,14 +6,14 @@ import SwiftUI
 final class StatusItemController: NSObject {
     private let model: AppModel
     private let settings: AppSettings
-    private let onShowDashboard: () -> Void
+    private let onShowDashboard: (DashboardTab?) -> Void
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var subscriptions = Set<AnyCancellable>()
     private var lastStatusTitle = ""
     private var lastCapability: ControlCapability?
 
-    init(model: AppModel, settings: AppSettings, onShowDashboard: @escaping () -> Void) {
+    init(model: AppModel, settings: AppSettings, onShowDashboard: @escaping (DashboardTab?) -> Void) {
         self.model = model
         self.settings = settings
         self.onShowDashboard = onShowDashboard
@@ -56,9 +56,9 @@ final class StatusItemController: NSObject {
 
     private func makePopoverContent() -> NSViewController {
         NSHostingController(
-            rootView: PopoverView(onShowDashboard: { [weak self] in
+            rootView: PopoverView(onShowDashboard: { [weak self] tab in
                 self?.popover.performClose(nil)
-                self?.onShowDashboard()
+                self?.onShowDashboard(tab)
             }, onShowSettings: { [weak self] in
                 self?.popover.performClose(nil)
                 NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
