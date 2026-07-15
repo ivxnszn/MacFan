@@ -2,6 +2,25 @@
 
 All notable changes to MacFan are documented here.
 
+## [0.1.1] — 2026-07-14
+
+This patch restores the dedicated battery workspace from the premium MacFan design pass and keeps battery information useful without adding generic dashboard noise.
+
+### What changed
+
+- **Restored the Battery tab** with a large live charge graphic, percentage, battery state, remaining time, cell power, health, and temperature at a glance.
+- **Added progressive battery detail** for current, voltage, cycle count, and a discharge-history chart without overwhelming the compact view.
+- **Clarified power semantics**: MacFan labels cell-side power as an estimate from current × voltage and does not present the adapter rating as battery consumption.
+- **Moved battery analysis out of the generic metric grid** so the Overview stays focused on thermal and fan behavior while the Battery tab gets the space it needs.
+- **Added accessible Battery controls** with stable identifiers and spoken labels for charge, electrical details, and history disclosures.
+- **Refined release metadata** to version 0.1.1 and removed internal terminology from the Battery tab subtitle.
+
+### Validation
+
+- arm64 Debug and Release builds pass.
+- 103 unit tests pass.
+- Battery tab, electrical disclosure, and discharge-history interaction verified on the target Mac.
+
 ## [0.1.0] — 2026-07-13
 
 This is the first complete public release of MacFan: a local-first thermal monitor with carefully guarded, experimental fan control for Apple Silicon Macs.
